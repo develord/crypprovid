@@ -33,12 +33,166 @@ import requests
 # Alias for compatibility
 download_historical_data = get_historical_data
 
-# Import technical indicator functions from xgboost_features (no tensorflow dependency)
-from xgboost_features import (
-    calculate_rsi, calculate_ema, calculate_macd,
-    calculate_bollinger_bands, calculate_stochastic_rsi,
-    calculate_atr, calculate_obv
-)
+# ============================================================================
+# BASIC INDICATOR FUNCTIONS (No TensorFlow dependency)
+# ============================================================================
+
+def calculate_rsi(closes, period=14):
+    """Calculate RSI indicator"""
+    if len(closes) < period + 1:
+        return None
+
+    deltas = np.diff(closes)
+    gains = np.where(deltas > 0, deltas, 0)
+    losses = np.where(deltas < 0, -deltas, 0)
+
+    avg_gain = np.mean(gains[:period])
+    avg_loss = np.mean(losses[:period])
+
+    for i in range(period, len(gains)):
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+
+    if avg_loss == 0:
+        return 100
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+def calculate_ema(closes, period):
+    """Calculate EMA indicator"""
+    if len(closes) < period:
+        return None
+
+    multiplier = 2 / (period + 1)
+    ema = np.mean(closes[:period])
+
+    for price in closes[period:]:
+        ema = (price * multiplier) + (ema * (1 - multiplier))
+
+    return ema
+
+def calculate_macd(closes, fast=12, slow=26, signal=9):
+    """Calculate MACD indicator"""
+    if len(closes) < slow + signal:
+        return None
+
+    ema_fast = calculate_ema(closes, fast)
+    ema_slow = calculate_ema(closes, slow)
+
+    if ema_fast is None or ema_slow is None:
+        return None
+
+    macd_line = ema_fast - ema_slow
+
+    # Calculate signal line (EMA of MACD)
+    macd_values = []
+    for i in range(slow, len(closes)):
+        window = closes[:i+1]
+        fast_ema = calculate_ema(window, fast)
+        slow_ema = calculate_ema(window, slow)
+        if fast_ema is not None and slow_ema is not None:
+            macd_values.append(fast_ema - slow_ema)
+
+    if len(macd_values) < signal:
+        signal_line = macd_line
+    else:
+        signal_line = calculate_ema(macd_values, signal)
+
+    histogram = macd_line - (signal_line if signal_line else 0)
+
+    return {
+        'macd': macd_line,
+        'signal': signal_line if signal_line else 0,
+        'histogram': histogram
+    }
+
+def calculate_bollinger_bands(closes, period=20, std_dev=2):
+    """Calculate Bollinger Bands"""
+    if len(closes) < period:
+        return None
+
+    sma = np.mean(closes[-period:])
+    std = np.std(closes[-period:])
+
+    return {
+        'upper': sma + (std * std_dev),
+        'middle': sma,
+        'lower': sma - (std * std_dev)
+    }
+
+def calculate_stochastic_rsi(closes, period=14, k_period=3, d_period=3):
+    """Calculate Stochastic RSI"""
+    if len(closes) < period * 2:
+        return None
+
+    # Calculate RSI values for the period
+    rsi_values = []
+    for i in range(period, len(closes) + 1):
+        window = closes[:i]
+        rsi = calculate_rsi(window, period)
+        if rsi is not None:
+            rsi_values.append(rsi)
+
+    if len(rsi_values) < period:
+        return {'k': 50, 'd': 50}
+
+    # Calculate Stochastic of RSI
+    recent_rsi = rsi_values[-period:]
+    max_rsi = max(recent_rsi)
+    min_rsi = min(recent_rsi)
+
+    if max_rsi == min_rsi:
+        stoch_rsi = 50
+    else:
+        stoch_rsi = ((rsi_values[-1] - min_rsi) / (max_rsi - min_rsi)) * 100
+
+    # K and D are simplified (should use SMA of stoch_rsi)
+    k = stoch_rsi
+    d = stoch_rsi  # Simplified
+
+    return {'k': k, 'd': d}
+
+def calculate_atr(klines, period=14):
+    """Calculate ATR indicator"""
+    if len(klines) < period + 1:
+        return 0
+
+    true_ranges = []
+    for i in range(1, len(klines)):
+        high = float(klines[i][2])
+        low = float(klines[i][3])
+        prev_close = float(klines[i-1][4])
+
+        tr = max(
+            high - low,
+            abs(high - prev_close),
+            abs(low - prev_close)
+        )
+        true_ranges.append(tr)
+
+    if len(true_ranges) < period:
+        return np.mean(true_ranges) if true_ranges else 0
+
+    return np.mean(true_ranges[-period:])
+
+def calculate_obv(klines):
+    """Calculate OBV indicator"""
+    if len(klines) < 2:
+        return 0
+
+    obv = 0
+    for i in range(1, len(klines)):
+        close = float(klines[i][4])
+        prev_close = float(klines[i-1][4])
+        volume = float(klines[i][5])
+
+        if close > prev_close:
+            obv += volume
+        elif close < prev_close:
+            obv -= volume
+
+    return obv
 
 def calculate_indicators(klines):
     """Calculate technical indicators without tensorflow dependency"""
