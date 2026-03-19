@@ -12,7 +12,8 @@ class Settings:
 
     # Server configuration
     HOST: str = os.getenv("API_HOST", "0.0.0.0")
-    PORT: int = int(os.getenv("API_PORT", "8000"))
+    # Support both PORT (Render.com) and API_PORT (local dev)
+    PORT: int = int(os.getenv("PORT", os.getenv("API_PORT", "8000")))
     DEBUG: bool = os.getenv("DEBUG", "True").lower() == "true"
 
     # CORS configuration

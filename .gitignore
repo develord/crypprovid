@@ -9,9 +9,9 @@ venv/
 ENV/
 .venv
 
-# Machine Learning Models (trop volumineux)
-training/models/
-*.pkl
+# Machine Learning Models - Keep XGBoost V6 models for production
+# training/models/
+# *.pkl
 *.h5
 *.pt
 *.pth
