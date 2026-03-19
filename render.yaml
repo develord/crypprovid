@@ -5,8 +5,9 @@ services:
     region: frankfurt
     plan: free
     branch: main
-    buildCommand: "pip install -r api/requirements.txt"
-    startCommand: "cd api && python main.py"
+    rootDir: api
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python main.py"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
