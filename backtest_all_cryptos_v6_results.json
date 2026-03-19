@@ -1,0 +1,98 @@
+[
+  {
+    "crypto": "Bitcoin",
+    "version": "v6",
+    "timeframe": "1d",
+    "test_accuracy": 0.3471264367816092,
+    "final_capital": 1170.3353488713065,
+    "total_return_pct": 17.033534887130646,
+    "buy_hold_return_pct": -23.427064864720275,
+    "outperformance_pct": 40.46059975185092,
+    "num_trades": 30,
+    "test_samples": 442
+  },
+  {
+    "crypto": "Ethereum",
+    "version": "v6",
+    "timeframe": "1d",
+    "test_accuracy": 0.45977011494252873,
+    "final_capital": 1870.2933341929079,
+    "total_return_pct": 87.0293334192908,
+    "buy_hold_return_pct": -33.35575143287367,
+    "outperformance_pct": 120.38508485216445,
+    "num_trades": 46,
+    "test_samples": 442
+  },
+  {
+    "crypto": "BNB",
+    "version": "v6",
+    "timeframe": "1d",
+    "test_accuracy": 0.41743119266055045,
+    "final_capital": 1318.9953225921029,
+    "total_return_pct": 31.89953225921029,
+    "buy_hold_return_pct": -8.003221066907772,
+    "outperformance_pct": 39.90275332611806,
+    "num_trades": 33,
+    "test_samples": 443
+  },
+  {
+    "crypto": "XRP",
+    "version": "v6",
+    "timeframe": "1d",
+    "test_accuracy": 0.4541284403669725,
+    "final_capital": 1153.3682333262554,
+    "total_return_pct": 15.336823332625546,
+    "buy_hold_return_pct": -37.392832647462285,
+    "outperformance_pct": 52.72965598008783,
+    "num_trades": 38,
+    "test_samples": 443
+  },
+  {
+    "crypto": "Cardano",
+    "version": "v6",
+    "timeframe": "1d",
+    "test_accuracy": 0.49770642201834864,
+    "final_capital": 769.9673115580647,
+    "total_return_pct": -23.00326884419353,
+    "buy_hold_return_pct": -70.4077206679679,
+    "outperformance_pct": 47.404451823774366,
+    "num_trades": 32,
+    "test_samples": 443
+  },
+  {
+    "crypto": "Avalanche",
+    "version": "v6",
+    "timeframe": "1d",
+    "test_accuracy": 0.4724770642201835,
+    "final_capital": 1698.2802828758324,
+    "total_return_pct": 69.82802828758324,
+    "buy_hold_return_pct": -74.40444679724722,
+    "outperformance_pct": 144.23247508483047,
+    "num_trades": 15,
+    "test_samples": 443
+  },
+  {
+    "crypto": "Polkadot",
+    "version": "v6",
+    "timeframe": "1d",
+    "test_accuracy": 0.536697247706422,
+    "final_capital": 1000.0,
+    "total_return_pct": 0.0,
+    "buy_hold_return_pct": -77.84711388455537,
+    "outperformance_pct": 77.84711388455537,
+    "num_trades": 0,
+    "test_samples": 443
+  },
+  {
+    "crypto": "Solana",
+    "version": "v6",
+    "timeframe": "1d",
+    "test_accuracy": 0.38850574712643676,
+    "final_capital": 655.7678570806444,
+    "total_return_pct": -34.42321429193556,
+    "buy_hold_return_pct": -53.41260037059913,
+    "outperformance_pct": 18.98938607866357,
+    "num_trades": 50,
+    "test_samples": 442
+  }
+]

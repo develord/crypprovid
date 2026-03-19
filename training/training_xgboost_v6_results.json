@@ -1,0 +1,170 @@
+[
+  {
+    "crypto": "Bitcoin",
+    "timeframe": "1d",
+    "n_features": 57,
+    "total_samples": 2793,
+    "kfold_avg_train_acc": 0.4790377628840979,
+    "kfold_avg_val_acc": 0.39493791786055393,
+    "kfold_std_val_acc": 0.034825510321880686,
+    "kfold_best_val_acc": 0.44412607449856734,
+    "final_train_acc": 0.4968666069829902,
+    "final_val_acc": 0.3774597495527728,
+    "overfitting_gap": 0.08409984502354395,
+    "model_path": "./models/xgboost_v6/bitcoin_1d_xgboost_v6.pkl",
+    "hyperparameters": {
+      "n_estimators": 300,
+      "max_depth": 5,
+      "learning_rate": 0.03,
+      "subsample": 0.7,
+      "colsample_bytree": 0.6,
+      "colsample_bylevel": 0.5,
+      "min_child_weight": 15,
+      "gamma": 2.0,
+      "reg_alpha": 5.0,
+      "reg_lambda": 8.0,
+      "scale_pos_weight": 1,
+      "objective": "multi:softprob",
+      "num_class": 3,
+      "random_state": 42,
+      "eval_metric": "mlogloss",
+      "early_stopping_rounds": 30,
+      "verbose": 0
+    },
+    "fold_results": [
+      {
+        "fold": 1,
+        "train_acc": 0.5092989985693849,
+        "val_acc": 0.44412607449856734,
+        "train_samples": 699,
+        "val_samples": 698
+      },
+      {
+        "fold": 2,
+        "train_acc": 0.4581245526127416,
+        "val_acc": 0.37249283667621774,
+        "train_samples": 1397,
+        "val_samples": 698
+      },
+      {
+        "fold": 3,
+        "train_acc": 0.46968973747016707,
+        "val_acc": 0.3681948424068768,
+        "train_samples": 2095,
+        "val_samples": 698
+      }
+    ]
+  },
+  {
+    "crypto": "Ethereum",
+    "timeframe": "1d",
+    "n_features": 57,
+    "total_samples": 2793,
+    "kfold_avg_train_acc": 0.510883688605548,
+    "kfold_avg_val_acc": 0.44985673352435535,
+    "kfold_std_val_acc": 0.03686154822426534,
+    "kfold_best_val_acc": 0.49570200573065903,
+    "final_train_acc": 0.5962399283795882,
+    "final_val_acc": 0.44364937388193204,
+    "overfitting_gap": 0.06102695508119266,
+    "model_path": "./models/xgboost_v6/ethereum_1d_xgboost_v6.pkl",
+    "hyperparameters": {
+      "n_estimators": 300,
+      "max_depth": 5,
+      "learning_rate": 0.03,
+      "subsample": 0.7,
+      "colsample_bytree": 0.6,
+      "colsample_bylevel": 0.5,
+      "min_child_weight": 15,
+      "gamma": 2.0,
+      "reg_alpha": 5.0,
+      "reg_lambda": 8.0,
+      "scale_pos_weight": 1,
+      "objective": "multi:softprob",
+      "num_class": 3,
+      "random_state": 42,
+      "eval_metric": "mlogloss",
+      "early_stopping_rounds": 30,
+      "verbose": 0
+    },
+    "fold_results": [
+      {
+        "fold": 1,
+        "train_acc": 0.43204577968526464,
+        "val_acc": 0.49570200573065903,
+        "train_samples": 699,
+        "val_samples": 698
+      },
+      {
+        "fold": 2,
+        "train_acc": 0.4638511095204009,
+        "val_acc": 0.4054441260744986,
+        "train_samples": 1397,
+        "val_samples": 698
+      },
+      {
+        "fold": 3,
+        "train_acc": 0.6367541766109786,
+        "val_acc": 0.4484240687679083,
+        "train_samples": 2095,
+        "val_samples": 698
+      }
+    ]
+  },
+  {
+    "crypto": "Solana",
+    "timeframe": "1d",
+    "n_features": 57,
+    "total_samples": 1839,
+    "kfold_avg_train_acc": 0.530990259484807,
+    "kfold_avg_val_acc": 0.3986928104575163,
+    "kfold_std_val_acc": 0.046659051283105345,
+    "kfold_best_val_acc": 0.4596949891067538,
+    "final_train_acc": 0.5703602991162474,
+    "final_val_acc": 0.34782608695652173,
+    "overfitting_gap": 0.13229744902729074,
+    "model_path": "./models/xgboost_v6/solana_1d_xgboost_v6.pkl",
+    "hyperparameters": {
+      "n_estimators": 300,
+      "max_depth": 5,
+      "learning_rate": 0.03,
+      "subsample": 0.7,
+      "colsample_bytree": 0.6,
+      "colsample_bylevel": 0.5,
+      "min_child_weight": 15,
+      "gamma": 2.0,
+      "reg_alpha": 5.0,
+      "reg_lambda": 8.0,
+      "scale_pos_weight": 1,
+      "objective": "multi:softprob",
+      "num_class": 3,
+      "random_state": 42,
+      "eval_metric": "mlogloss",
+      "early_stopping_rounds": 30,
+      "verbose": 0
+    },
+    "fold_results": [
+      {
+        "fold": 1,
+        "train_acc": 0.6666666666666666,
+        "val_acc": 0.4596949891067538,
+        "train_samples": 462,
+        "val_samples": 459
+      },
+      {
+        "fold": 2,
+        "train_acc": 0.46688382193268185,
+        "val_acc": 0.3464052287581699,
+        "train_samples": 921,
+        "val_samples": 459
+      },
+      {
+        "fold": 3,
+        "train_acc": 0.45942028985507244,
+        "val_acc": 0.3899782135076253,
+        "train_samples": 1380,
+        "val_samples": 459
+      }
+    ]
+  }
+]

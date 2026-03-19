@@ -1,0 +1,338 @@
+[
+  {
+    "crypto": "BNB",
+    "timeframe": "1d",
+    "n_features": 57,
+    "total_samples": 2793,
+    "kfold_avg_train_acc": 0.45670087369899504,
+    "kfold_avg_val_acc": 0.41786055396370586,
+    "kfold_std_val_acc": 0.050195542859487734,
+    "kfold_best_val_acc": 0.4885386819484241,
+    "final_train_acc": 0.5376007162041182,
+    "final_val_acc": 0.37924865831842575,
+    "overfitting_gap": 0.038840319735289175,
+    "model_path": "./models/xgboost_v6/bnb_1d_xgboost_v6.pkl",
+    "hyperparameters": {
+      "n_estimators": 300,
+      "max_depth": 5,
+      "learning_rate": 0.03,
+      "subsample": 0.7,
+      "colsample_bytree": 0.6,
+      "colsample_bylevel": 0.5,
+      "min_child_weight": 15,
+      "gamma": 2.0,
+      "reg_alpha": 5.0,
+      "reg_lambda": 8.0,
+      "scale_pos_weight": 1,
+      "objective": "multi:softprob",
+      "num_class": 3,
+      "random_state": 42,
+      "eval_metric": "mlogloss",
+      "early_stopping_rounds": 30,
+      "verbose": 0
+    },
+    "fold_results": [
+      {
+        "fold": 1.0,
+        "train_acc": 0.44635193133047213,
+        "val_acc": 0.4885386819484241,
+        "train_samples": 699.0,
+        "val_samples": 698.0
+      },
+      {
+        "fold": 2.0,
+        "train_acc": 0.4846098783106657,
+        "val_acc": 0.37679083094555876,
+        "train_samples": 1397.0,
+        "val_samples": 698.0
+      },
+      {
+        "fold": 3.0,
+        "train_acc": 0.43914081145584727,
+        "val_acc": 0.38825214899713467,
+        "train_samples": 2095.0,
+        "val_samples": 698.0
+      }
+    ]
+  },
+  {
+    "crypto": "XRP",
+    "timeframe": "1d",
+    "n_features": 57,
+    "total_samples": 2670,
+    "kfold_avg_train_acc": 0.5869639556966774,
+    "kfold_avg_val_acc": 0.4352823588205897,
+    "kfold_std_val_acc": 0.031952758347117985,
+    "kfold_best_val_acc": 0.4662668665667166,
+    "final_train_acc": 0.600187265917603,
+    "final_val_acc": 0.43820224719101125,
+    "overfitting_gap": 0.15168159687608768,
+    "model_path": "./models/xgboost_v6/xrp_1d_xgboost_v6.pkl",
+    "hyperparameters": {
+      "n_estimators": 300,
+      "max_depth": 5,
+      "learning_rate": 0.03,
+      "subsample": 0.7,
+      "colsample_bytree": 0.6,
+      "colsample_bylevel": 0.5,
+      "min_child_weight": 15,
+      "gamma": 2.0,
+      "reg_alpha": 5.0,
+      "reg_lambda": 8.0,
+      "scale_pos_weight": 1,
+      "objective": "multi:softprob",
+      "num_class": 3,
+      "random_state": 42,
+      "eval_metric": "mlogloss",
+      "early_stopping_rounds": 30,
+      "verbose": 0
+    },
+    "fold_results": [
+      {
+        "fold": 1.0,
+        "train_acc": 0.5904334828101644,
+        "val_acc": 0.4662668665667166,
+        "train_samples": 669.0,
+        "val_samples": 667.0
+      },
+      {
+        "fold": 2.0,
+        "train_acc": 0.5718562874251497,
+        "val_acc": 0.391304347826087,
+        "train_samples": 1336.0,
+        "val_samples": 667.0
+      },
+      {
+        "fold": 3.0,
+        "train_acc": 0.5986020968547179,
+        "val_acc": 0.4482758620689655,
+        "train_samples": 2003.0,
+        "val_samples": 667.0
+      }
+    ]
+  },
+  {
+    "crypto": "Cardano",
+    "timeframe": "1d",
+    "n_features": 57,
+    "total_samples": 2687,
+    "kfold_avg_train_acc": 0.532797472988021,
+    "kfold_avg_val_acc": 0.4545454545454546,
+    "kfold_std_val_acc": 0.026408413035274744,
+    "kfold_best_val_acc": 0.47540983606557374,
+    "final_train_acc": 0.604932526756631,
+    "final_val_acc": 0.49070631970260226,
+    "overfitting_gap": 0.07825201844256646,
+    "model_path": "./models/xgboost_v6/cardano_1d_xgboost_v6.pkl",
+    "hyperparameters": {
+      "n_estimators": 300,
+      "max_depth": 5,
+      "learning_rate": 0.03,
+      "subsample": 0.7,
+      "colsample_bytree": 0.6,
+      "colsample_bylevel": 0.5,
+      "min_child_weight": 15,
+      "gamma": 2.0,
+      "reg_alpha": 5.0,
+      "reg_lambda": 8.0,
+      "scale_pos_weight": 1,
+      "objective": "multi:softprob",
+      "num_class": 3,
+      "random_state": 42,
+      "eval_metric": "mlogloss",
+      "early_stopping_rounds": 30,
+      "verbose": 0
+    },
+    "fold_results": [
+      {
+        "fold": 1.0,
+        "train_acc": 0.44510385756676557,
+        "val_acc": 0.4172876304023845,
+        "train_samples": 674.0,
+        "val_samples": 671.0
+      },
+      {
+        "fold": 2.0,
+        "train_acc": 0.6468401486988847,
+        "val_acc": 0.47093889716840537,
+        "train_samples": 1345.0,
+        "val_samples": 671.0
+      },
+      {
+        "fold": 3.0,
+        "train_acc": 0.5064484126984127,
+        "val_acc": 0.47540983606557374,
+        "train_samples": 2016.0,
+        "val_samples": 671.0
+      }
+    ]
+  },
+  {
+    "crypto": "Avalanche",
+    "timeframe": "1d",
+    "n_features": 57,
+    "total_samples": 1798,
+    "kfold_avg_train_acc": 0.5361149466179388,
+    "kfold_avg_val_acc": 0.4573125463994061,
+    "kfold_std_val_acc": 0.017283514071006395,
+    "kfold_best_val_acc": 0.47884187082405344,
+    "final_train_acc": 0.5869262865090403,
+    "final_val_acc": 0.4361111111111111,
+    "overfitting_gap": 0.07880240021853269,
+    "model_path": "./models/xgboost_v6/avalanche_1d_xgboost_v6.pkl",
+    "hyperparameters": {
+      "n_estimators": 300,
+      "max_depth": 5,
+      "learning_rate": 0.03,
+      "subsample": 0.7,
+      "colsample_bytree": 0.6,
+      "colsample_bylevel": 0.5,
+      "min_child_weight": 15,
+      "gamma": 2.0,
+      "reg_alpha": 5.0,
+      "reg_lambda": 8.0,
+      "scale_pos_weight": 1,
+      "objective": "multi:softprob",
+      "num_class": 3,
+      "random_state": 42,
+      "eval_metric": "mlogloss",
+      "early_stopping_rounds": 30,
+      "verbose": 0
+    },
+    "fold_results": [
+      {
+        "fold": 1.0,
+        "train_acc": 0.5587583148558758,
+        "val_acc": 0.4365256124721604,
+        "train_samples": 451.0,
+        "val_samples": 449.0
+      },
+      {
+        "fold": 2.0,
+        "train_acc": 0.6077777777777778,
+        "val_acc": 0.45657015590200445,
+        "train_samples": 900.0,
+        "val_samples": 449.0
+      },
+      {
+        "fold": 3.0,
+        "train_acc": 0.44180874722016306,
+        "val_acc": 0.47884187082405344,
+        "train_samples": 1349.0,
+        "val_samples": 449.0
+      }
+    ]
+  },
+  {
+    "crypto": "Polkadot",
+    "timeframe": "1d",
+    "n_features": 57,
+    "total_samples": 1833,
+    "kfold_avg_train_acc": 0.5246330519253734,
+    "kfold_avg_val_acc": 0.4650655021834061,
+    "kfold_std_val_acc": 0.053154467646317954,
+    "kfold_best_val_acc": 0.537117903930131,
+    "final_train_acc": 0.45497953615279674,
+    "final_val_acc": 0.5149863760217984,
+    "overfitting_gap": 0.05956754974196726,
+    "model_path": "./models/xgboost_v6/polkadot_1d_xgboost_v6.pkl",
+    "hyperparameters": {
+      "n_estimators": 300,
+      "max_depth": 5,
+      "learning_rate": 0.03,
+      "subsample": 0.7,
+      "colsample_bytree": 0.6,
+      "colsample_bylevel": 0.5,
+      "min_child_weight": 15,
+      "gamma": 2.0,
+      "reg_alpha": 5.0,
+      "reg_lambda": 8.0,
+      "scale_pos_weight": 1,
+      "objective": "multi:softprob",
+      "num_class": 3,
+      "random_state": 42,
+      "eval_metric": "mlogloss",
+      "early_stopping_rounds": 30,
+      "verbose": 0
+    },
+    "fold_results": [
+      {
+        "fold": 1.0,
+        "train_acc": 0.5490196078431373,
+        "val_acc": 0.44759825327510916,
+        "train_samples": 459.0,
+        "val_samples": 458.0
+      },
+      {
+        "fold": 2.0,
+        "train_acc": 0.5812431842966194,
+        "val_acc": 0.4104803493449782,
+        "train_samples": 917.0,
+        "val_samples": 458.0
+      },
+      {
+        "fold": 3.0,
+        "train_acc": 0.44363636363636366,
+        "val_acc": 0.537117903930131,
+        "train_samples": 1375.0,
+        "val_samples": 458.0
+      }
+    ]
+  },
+  {
+    "crypto": "Polygon",
+    "timeframe": "1d",
+    "n_features": 57,
+    "total_samples": 1758,
+    "kfold_avg_train_acc": 0.512267367527034,
+    "kfold_avg_val_acc": 0.40774487471526194,
+    "kfold_std_val_acc": 0.059661962887056025,
+    "kfold_best_val_acc": 0.4874715261958998,
+    "final_train_acc": 0.6465149359886202,
+    "final_val_acc": 0.41761363636363635,
+    "overfitting_gap": 0.104522492811772,
+    "model_path": "./models/xgboost_v6/polygon_1d_xgboost_v6.pkl",
+    "hyperparameters": {
+      "n_estimators": 300,
+      "max_depth": 5,
+      "learning_rate": 0.03,
+      "subsample": 0.7,
+      "colsample_bytree": 0.6,
+      "colsample_bylevel": 0.5,
+      "min_child_weight": 15,
+      "gamma": 2.0,
+      "reg_alpha": 5.0,
+      "reg_lambda": 8.0,
+      "scale_pos_weight": 1,
+      "objective": "multi:softprob",
+      "num_class": 3,
+      "random_state": 42,
+      "eval_metric": "mlogloss",
+      "early_stopping_rounds": 30,
+      "verbose": 0
+    },
+    "fold_results": [
+      {
+        "fold": 1.0,
+        "train_acc": 0.49206349206349204,
+        "val_acc": 0.4874715261958998,
+        "train_samples": 441.0,
+        "val_samples": 439.0
+      },
+      {
+        "fold": 2.0,
+        "train_acc": 0.48977272727272725,
+        "val_acc": 0.3917995444191344,
+        "train_samples": 880.0,
+        "val_samples": 439.0
+      },
+      {
+        "fold": 3.0,
+        "train_acc": 0.5549658832448825,
+        "val_acc": 0.3439635535307517,
+        "train_samples": 1319.0,
+        "val_samples": 439.0
+      }
+    ]
+  }
+]

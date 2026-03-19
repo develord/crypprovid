@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Machine Learning Models (trop volumineux)
+training/models/
+*.pkl
+*.h5
+*.pt
+*.pth
+*.onnx
+
+# Logs
+*.log
+logs/
+*.out
+
+# Data files
+*.csv
+*.parquet
+data/raw/
+data/processed/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.cache
+
+# Environment variables
+.env
+.env.local
+
+# Training results
+training_results/
+backtest_results/
