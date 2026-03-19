@@ -20,10 +20,130 @@ sys.path.insert(0, str(project_root / 'data'))
 
 from config import settings
 from models import PredictionResponse, Probabilities, RiskManagement
-from train_models_xgboost import download_historical_data, calculate_indicators, prepare_features
+# Removed train_models_xgboost import to avoid tensorflow dependency
+# from train_models_xgboost import download_historical_data, calculate_indicators, prepare_features
+from data_manager import get_historical_data
 from xgboost_features import calculate_all_xgboost_features
 from xgboost_features_v6 import calculate_all_xgboost_features_v6
 from feature_selection_v5 import SELECTED_FEATURES_V5
+
+# Import indicator calculation functions from training without tensorflow
+import requests
+
+# Alias for compatibility
+download_historical_data = get_historical_data
+
+# Import technical indicator functions from xgboost_features (no tensorflow dependency)
+from xgboost_features import (
+    calculate_rsi, calculate_ema, calculate_macd,
+    calculate_bollinger_bands, calculate_stochastic_rsi,
+    calculate_atr, calculate_obv
+)
+
+def calculate_indicators(klines):
+    """Calculate technical indicators without tensorflow dependency"""
+    closes = [float(k[4]) for k in klines]
+    highs = [float(k[2]) for k in klines]
+    lows = [float(k[3]) for k in klines]
+    volumes = [float(k[5]) for k in klines]
+    current_price = closes[-1]
+
+    return {
+        'rsi': calculate_rsi(closes),
+        'ema20': calculate_ema(closes, 20),
+        'ema50': calculate_ema(closes, 50),
+        'ema200': calculate_ema(closes, 200),
+        'macd': calculate_macd(closes),
+        'bollingerBands': calculate_bollinger_bands(closes),
+        'stochasticRsi': calculate_stochastic_rsi(closes),
+        'atr': calculate_atr(klines),
+        'obv': calculate_obv(klines),
+        'currentPrice': current_price,
+        'high': highs[-1],
+        'low': lows[-1],
+        'volume': volumes[-1]
+    }
+
+def prepare_features(indicators, current_price, prices_history=None):
+    """Prepare features for model prediction without tensorflow dependency"""
+    features = []
+
+    # RSI (2 features)
+    if indicators['rsi'] is not None:
+        features.append(indicators['rsi'] / 100)
+        features.append((indicators['rsi'] - 50) / 50 if indicators['rsi'] > 50 else (50 - indicators['rsi']) / 50)
+    else:
+        features.extend([0.5, 0])
+
+    # EMA features (3 features)
+    for ema_key in ['ema20', 'ema50', 'ema200']:
+        if indicators[ema_key] is not None:
+            features.append((current_price - indicators[ema_key]) / current_price)
+        else:
+            features.append(0)
+
+    # MACD (3 features)
+    if indicators['macd'] is not None:
+        macd_line = indicators['macd'].get('macd', 0)
+        signal_line = indicators['macd'].get('signal', 0)
+        histogram = indicators['macd'].get('histogram', 0)
+        features.extend([macd_line / current_price if current_price > 0 else 0,
+                        signal_line / current_price if current_price > 0 else 0,
+                        histogram / current_price if current_price > 0 else 0])
+    else:
+        features.extend([0, 0, 0])
+
+    # Bollinger Bands (2 features)
+    if indicators['bollingerBands'] is not None:
+        upper = indicators['bollingerBands'].get('upper', current_price)
+        lower = indicators['bollingerBands'].get('lower', current_price)
+        features.extend([(current_price - lower) / (upper - lower) if upper != lower else 0.5,
+                        (upper - lower) / current_price if current_price > 0 else 0])
+    else:
+        features.extend([0.5, 0])
+
+    # Stochastic RSI (2 features)
+    if indicators['stochasticRsi'] is not None:
+        features.extend([indicators['stochasticRsi'].get('k', 50) / 100,
+                        indicators['stochasticRsi'].get('d', 50) / 100])
+    else:
+        features.extend([0.5, 0.5])
+
+    # ATR & OBV (2 features)
+    features.append(indicators.get('atr', 0) / current_price if current_price > 0 else 0)
+    features.append(np.tanh(indicators.get('obv', 0) / 1e9))  # Normalize OBV
+
+    # Price momentum features (11 features - Phase 1)
+    if prices_history and len(prices_history) >= 20:
+        for period in [1, 3, 7, 14, 30]:
+            if len(prices_history) > period:
+                features.append((prices_history[-1] - prices_history[-period-1]) / prices_history[-period-1])
+            else:
+                features.append(0)
+
+        # Volatility
+        returns = [(prices_history[i] - prices_history[i-1]) / prices_history[i-1]
+                  for i in range(max(1, len(prices_history)-20), len(prices_history))]
+        features.append(np.std(returns) if returns else 0)
+
+        # Price position in 20-day range
+        recent_prices = prices_history[-20:]
+        price_range = max(recent_prices) - min(recent_prices)
+        features.append((current_price - min(recent_prices)) / price_range if price_range > 0 else 0.5)
+
+        # Moving averages crossover signals
+        if len(prices_history) >= 50:
+            ma20 = np.mean(prices_history[-20:])
+            ma50 = np.mean(prices_history[-50:])
+            features.extend([(ma20 - ma50) / ma50 if ma50 > 0 else 0,
+                           1 if ma20 > ma50 else 0,
+                           (current_price - ma20) / ma20 if ma20 > 0 else 0])
+        else:
+            features.extend([0, 0, 0])
+    else:
+        features.extend([0] * 11)
+
+    return features[:29]  # Return 29 base features
 
 logger = logging.getLogger(__name__)
 
