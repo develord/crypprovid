@@ -24,6 +24,7 @@ logs/
 
 # Data files
 *.csv
+!data/v11_cache/*.csv
 *.parquet
 data/raw/
 data/processed/
