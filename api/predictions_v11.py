@@ -1,17 +1,25 @@
 """
-V11 TEMPORAL PREDICTION SERVICE
-================================
-Service de prédiction utilisant les modèles V11 TEMPORAL multi-timeframe.
+V11 TEMPORAL PREDICTION SERVICE - LIVE FEATURES
+================================================
+Service de prédiction utilisant les modèles V11 TEMPORAL multi-timeframe avec features LIVE.
 
 Architecture:
 - Modèles: Binary classifiers XGBoost (P(TP) prediction)
-- Features: Multi-timeframe (1d + 4h + 1h) déjà calculées dans CSV merged
+- Features: LIVE multi-timeframe (1d + 4h + 1w) depuis Binance API
+- Bitcoin: 237 features (79 indicators × 3 timeframes)
+- Ethereum/Solana: 348 features (237 + 111 BTC correlation/altcoin features)
 - Thresholds optimaux: BTC=0.37, ETH=0.35, SOL=0.35
 - Triple Barrier: TP=+1.5%, SL=-0.75%, 7 days lookahead
 
 Performance validée (Walk-Forward):
 - Portfolio ROI: +43.38%
 - BTC: +22.56%, ETH: +45.07%, SOL: +64.48%
+
+LIVE Implementation:
+- Real-time klines from Binance (1d, 4h, 1w)
+- Complete indicator calculation (RSI, MACD, BB, EMA, SMA, ATR, Stochastic, ADX, OBV, CMF)
+- BTC correlation features for altcoins (volatility, momentum, trend, dominance)
+- Response time: ~1-2s with full feature generation
 
 Date: 21 Mars 2026
 """
@@ -24,6 +32,7 @@ import requests
 from pathlib import Path
 from typing import Dict, Tuple, Optional
 from datetime import datetime
+from live_features_complete import LiveFeatureEngineComplete
 
 class PredictionServiceV11:
     """Service de prédiction V11 TEMPORAL"""
@@ -41,7 +50,10 @@ class PredictionServiceV11:
         # Models storage
         self.models = {}
 
-        print("[V11] Prediction Service initialized")
+        # Live feature engine - COMPLETE VERSION (237 features)
+        self.live_engine = LiveFeatureEngineComplete()
+
+        print("[V11] Prediction Service initialized with COMPLETE LIVE feature engine (237 features)")
 
     def _load_config(self) -> Dict:
         """Load V11 configuration"""
@@ -198,12 +210,8 @@ class PredictionServiceV11:
         model = self.models[crypto_id]
         threshold = self.thresholds.get(crypto_id, 0.35)
 
-        # Get latest features
-        features, csv_price = self.get_latest_features(crypto_id)
-
-        # Get live price from Binance (fallback to CSV price if unavailable)
-        live_price = self.get_live_price(crypto_id)
-        current_price = live_price if live_price is not None else csv_price
+        # Get LIVE features from Binance (avec multi-timeframe 1d+4h+1h)
+        features, current_price = self.live_engine.get_live_features(crypto_id)
 
         # Predict P(TP)
         prob_tp = model.predict_proba(features.reshape(1, -1))[0, 1]
