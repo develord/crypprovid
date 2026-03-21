@@ -20,6 +20,7 @@ import pandas as pd
 import numpy as np
 import joblib
 import json
+import requests
 from pathlib import Path
 from typing import Dict, Tuple, Optional
 from datetime import datetime
@@ -67,6 +68,42 @@ class PredictionServiceV11:
 
         print(f"[V11] Loaded thresholds: {thresholds}")
         return thresholds
+
+    def _get_binance_symbol(self, crypto_id: str) -> str:
+        """Convert crypto ID to Binance symbol"""
+        symbol_map = {
+            'bitcoin': 'BTCUSDT',
+            'ethereum': 'ETHUSDT',
+            'solana': 'SOLUSDT'
+        }
+        return symbol_map.get(crypto_id, f'{crypto_id.upper()}USDT')
+
+    def get_live_price(self, crypto_id: str) -> Optional[float]:
+        """
+        Get live price from Binance API
+
+        Args:
+            crypto_id: 'bitcoin', 'ethereum', or 'solana'
+
+        Returns:
+            Live price from Binance, or None if error
+        """
+        try:
+            binance_symbol = self._get_binance_symbol(crypto_id)
+            url = f'https://api.binance.com/api/v3/ticker/price?symbol={binance_symbol}'
+            response = requests.get(url, timeout=5)
+
+            if response.status_code == 200:
+                data = response.json()
+                live_price = float(data['price'])
+                print(f"[V11] Live price for {crypto_id}: ${live_price}")
+                return live_price
+            else:
+                print(f"[V11] Binance API error for {crypto_id}: {response.status_code}")
+                return None
+        except Exception as e:
+            print(f"[V11] Failed to fetch live price for {crypto_id}: {e}")
+            return None
 
     async def load_models(self):
         """Load all V11 models"""
@@ -162,7 +199,11 @@ class PredictionServiceV11:
         threshold = self.thresholds.get(crypto_id, 0.35)
 
         # Get latest features
-        features, current_price = self.get_latest_features(crypto_id)
+        features, csv_price = self.get_latest_features(crypto_id)
+
+        # Get live price from Binance (fallback to CSV price if unavailable)
+        live_price = self.get_live_price(crypto_id)
+        current_price = live_price if live_price is not None else csv_price
 
         # Predict P(TP)
         prob_tp = model.predict_proba(features.reshape(1, -1))[0, 1]
