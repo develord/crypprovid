@@ -31,8 +31,8 @@
     "solana": {
       "model": "solana_v11_classifier.joblib",
       "threshold": 0.35,
-      "num_features": 50,
-      "feature_selection": true,
+      "num_features": 348,
+      "feature_selection": false,
       "timeframes": [
         "1d",
         "4h",
