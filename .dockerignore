@@ -1,0 +1,49 @@
+# .dockerignore - Files to exclude from Docker build
+
+# Git
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Data files (not needed in production)
+data/*.csv
+data/*.parquet
+
+# Documentation
+README.md
+*.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Render config (not needed for Fly.io)
+render.yaml
+
+# Test files
+api/test_*.py
+api/check_*.py
+api/list_*.py
+api/*.bat
+api/*.txt
+!api/requirements.txt
+
+# Temporary files
+*.log
+*.tmp

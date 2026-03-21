@@ -198,27 +198,43 @@ class LiveFeatureEngineComplete:
         result[f'{prefix}cmf_20'] = mfv.rolling(20).sum() / result['volume'].rolling(20).sum()
 
         # 31-40. Lags (close et volume, 1-5 periods)
+        # IMPORTANT: close_lag uses pct_change * 100 to match training data
+        # volume_lag uses ratio to current volume
         for lag in range(1, 6):
-            result[f'{prefix}close_lag_{lag}'] = result['close'].shift(lag)
-            result[f'{prefix}volume_lag_{lag}'] = result['volume'].shift(lag)
+            result[f'{prefix}close_lag_{lag}'] = result['close'].pct_change(lag) * 100
+            result[f'{prefix}volume_lag_{lag}'] = result['volume'] / result['volume'].shift(lag)
 
         # 41-52. Price vs Mean, Volatility, Trend (windows 3,5,7,14)
+        # IMPORTANT: Formulas must match training data exactly (* 100 for percentages)
         for window in [3, 5, 7, 14]:
             mean = result['close'].rolling(window).mean()
             std = result['close'].rolling(window).std()
-            result[f'{prefix}price_vs_mean_{window}'] = (result['close'] - mean) / (mean + 1e-10)
-            result[f'{prefix}volatility_{window}'] = std / (mean + 1e-10)
-            result[f'{prefix}trend_{window}'] = (result['close'] - result['close'].shift(window)) / (result['close'].shift(window) + 1e-10)
+            result[f'{prefix}price_vs_mean_{window}'] = ((result['close'] - mean) / (mean + 1e-10) * 100).fillna(0)
+            result[f'{prefix}volatility_{window}'] = (std / (mean + 1e-10) * 100).fillna(0)
+
+            # Trend: linear regression slope normalized by mean * 100
+            def calc_slope(x):
+                if len(x) < 2:
+                    return 0
+                y = np.array(x)
+                slope = np.polyfit(np.arange(len(y)), y, 1)[0]
+                return (slope / np.mean(y) * 100) if np.mean(y) > 0 else 0
+
+            result[f'{prefix}trend_{window}'] = result['close'].rolling(window).apply(calc_slope, raw=True).fillna(0)
 
         # 53-57. Momentum (1,3,5,7,14 periods)
+        # IMPORTANT: Momentum uses pct_change * 100 (not absolute difference)
+        momentums = {}
         for period in [1, 3, 5, 7, 14]:
-            result[f'{prefix}momentum_{period}'] = result['close'] - result['close'].shift(period)
+            momentum = result['close'].pct_change(period) * 100
+            result[f'{prefix}momentum_{period}'] = momentum.fillna(0)
+            momentums[period] = momentum
 
-        # 58-61. Acceleration
-        result[f'{prefix}accel_1_3'] = result[f'{prefix}momentum_3'] - result[f'{prefix}momentum_1']
-        result[f'{prefix}accel_3_5'] = result[f'{prefix}momentum_5'] - result[f'{prefix}momentum_3']
-        result[f'{prefix}accel_5_7'] = result[f'{prefix}momentum_7'] - result[f'{prefix}momentum_5']
-        result[f'{prefix}accel_7_14'] = result[f'{prefix}momentum_14'] - result[f'{prefix}momentum_7']
+        # 58-61. Acceleration (difference between momentums)
+        result[f'{prefix}accel_1_3'] = (momentums[1] - momentums[3]).fillna(0)
+        result[f'{prefix}accel_3_5'] = (momentums[3] - momentums[5]).fillna(0)
+        result[f'{prefix}accel_5_7'] = (momentums[5] - momentums[7]).fillna(0)
+        result[f'{prefix}accel_7_14'] = (momentums[7] - momentums[14]).fillna(0)
 
         # 62-65. Higher highs / Lower lows ratios and range metrics
         result[f'{prefix}higher_highs_ratio'] = (result['high'] > result['high'].shift(1)).rolling(14).sum() / 14
@@ -229,10 +245,23 @@ class LiveFeatureEngineComplete:
         result[f'{prefix}range_expansion'] = (high_14 - low_14) / (high_14.shift(14) - low_14.shift(14) + 1e-10)
 
         # 66-71. Volume ratios and trends (windows 3,7,14)
+        # IMPORTANT: volume_ratio and volume_trend must match training formulas
         for window in [3, 7, 14]:
             vol_mean = result['volume'].rolling(window).mean()
-            result[f'{prefix}volume_ratio_{window}'] = result['volume'] / (vol_mean + 1e-10)
-            result[f'{prefix}volume_trend_{window}'] = (result['volume'] - result['volume'].shift(window)) / (result['volume'].shift(window) + 1e-10)
+            result[f'{prefix}volume_ratio_{window}'] = (result['volume'] / (vol_mean + 1e-10)).fillna(1.0)
+
+            # Volume trend: (late_half_avg - early_half_avg) / early_half_avg
+            def calc_volume_trend(x):
+                if len(x) < 2:
+                    return 0
+                mid = len(x) // 2
+                early_avg = np.mean(x[:mid])
+                late_avg = np.mean(x[mid:])
+                if early_avg == 0:
+                    return 0
+                return (late_avg - early_avg) / early_avg
+
+            result[f'{prefix}volume_trend_{window}'] = result['volume'].rolling(window).apply(calc_volume_trend, raw=True).fillna(0)
 
         # 72-77. Indicator momentums
         result[f'{prefix}rsi_momentum'] = result[f'{prefix}rsi_14'] - result[f'{prefix}rsi_14'].shift(1)

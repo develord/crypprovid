@@ -1,0 +1,241 @@
+Total features: 237
+
+ALL FEATURES:
+================================================================================
+  1. 1d_rsi_14
+  2. 1d_rsi_21
+  3. 1d_rsi_overbought
+  4. 1d_rsi_oversold
+  5. 1d_macd_line
+  6. 1d_macd_signal
+  7. 1d_macd_histogram
+  8. 1d_macd_crossover
+  9. 1d_bb_upper
+ 10. 1d_bb_middle
+ 11. 1d_bb_lower
+ 12. 1d_bb_width
+ 13. 1d_bb_percent
+ 14. 1d_ema_12
+ 15. 1d_ema_26
+ 16. 1d_ema_50
+ 17. 1d_ema_200
+ 18. 1d_ema_cross_12_26
+ 19. 1d_sma_20
+ 20. 1d_sma_50
+ 21. 1d_sma_200
+ 22. 1d_atr_14
+ 23. 1d_atr_pct
+ 24. 1d_stoch_k
+ 25. 1d_stoch_d
+ 26. 1d_stoch_overbought
+ 27. 1d_stoch_oversold
+ 28. 1d_adx_14
+ 29. 1d_obv
+ 30. 1d_cmf_20
+ 31. 1d_close_lag_1
+ 32. 1d_close_lag_2
+ 33. 1d_close_lag_3
+ 34. 1d_close_lag_4
+ 35. 1d_close_lag_5
+ 36. 1d_volume_lag_1
+ 37. 1d_volume_lag_2
+ 38. 1d_volume_lag_3
+ 39. 1d_volume_lag_4
+ 40. 1d_volume_lag_5
+ 41. 1d_price_vs_mean_3
+ 42. 1d_volatility_3
+ 43. 1d_trend_3
+ 44. 1d_price_vs_mean_5
+ 45. 1d_volatility_5
+ 46. 1d_trend_5
+ 47. 1d_price_vs_mean_7
+ 48. 1d_volatility_7
+ 49. 1d_trend_7
+ 50. 1d_price_vs_mean_14
+ 51. 1d_volatility_14
+ 52. 1d_trend_14
+ 53. 1d_momentum_1
+ 54. 1d_momentum_3
+ 55. 1d_momentum_5
+ 56. 1d_momentum_7
+ 57. 1d_momentum_14
+ 58. 1d_accel_1_3
+ 59. 1d_accel_3_5
+ 60. 1d_accel_5_7
+ 61. 1d_accel_7_14
+ 62. 1d_higher_highs_ratio
+ 63. 1d_lower_lows_ratio
+ 64. 1d_position_in_range
+ 65. 1d_range_expansion
+ 66. 1d_volume_ratio_3
+ 67. 1d_volume_trend_3
+ 68. 1d_volume_ratio_7
+ 69. 1d_volume_trend_7
+ 70. 1d_volume_ratio_14
+ 71. 1d_volume_trend_14
+ 72. 1d_rsi_momentum
+ 73. 1d_macd_momentum
+ 74. 1d_stoch_momentum
+ 75. 1d_cmf_momentum
+ 76. 1d_bb_position_momentum
+ 77. 1d_adx_momentum
+ 78. 1d_price_volume_corr
+ 79. 1d_price_volume_divergence
+ 80. 4h_rsi_14
+ 81. 4h_rsi_21
+ 82. 4h_rsi_overbought
+ 83. 4h_rsi_oversold
+ 84. 4h_macd_line
+ 85. 4h_macd_signal
+ 86. 4h_macd_histogram
+ 87. 4h_macd_crossover
+ 88. 4h_bb_upper
+ 89. 4h_bb_middle
+ 90. 4h_bb_lower
+ 91. 4h_bb_width
+ 92. 4h_bb_percent
+ 93. 4h_ema_12
+ 94. 4h_ema_26
+ 95. 4h_ema_50
+ 96. 4h_ema_200
+ 97. 4h_ema_cross_12_26
+ 98. 4h_sma_20
+ 99. 4h_sma_50
+100. 4h_sma_200
+101. 4h_atr_14
+102. 4h_atr_pct
+103. 4h_stoch_k
+104. 4h_stoch_d
+105. 4h_stoch_overbought
+106. 4h_stoch_oversold
+107. 4h_adx_14
+108. 4h_obv
+109. 4h_cmf_20
+110. 4h_close_lag_1
+111. 4h_close_lag_2
+112. 4h_close_lag_3
+113. 4h_close_lag_4
+114. 4h_close_lag_5
+115. 4h_volume_lag_1
+116. 4h_volume_lag_2
+117. 4h_volume_lag_3
+118. 4h_volume_lag_4
+119. 4h_volume_lag_5
+120. 4h_price_vs_mean_3
+121. 4h_volatility_3
+122. 4h_trend_3
+123. 4h_price_vs_mean_5
+124. 4h_volatility_5
+125. 4h_trend_5
+126. 4h_price_vs_mean_7
+127. 4h_volatility_7
+128. 4h_trend_7
+129. 4h_price_vs_mean_14
+130. 4h_volatility_14
+131. 4h_trend_14
+132. 4h_momentum_1
+133. 4h_momentum_3
+134. 4h_momentum_5
+135. 4h_momentum_7
+136. 4h_momentum_14
+137. 4h_accel_1_3
+138. 4h_accel_3_5
+139. 4h_accel_5_7
+140. 4h_accel_7_14
+141. 4h_higher_highs_ratio
+142. 4h_lower_lows_ratio
+143. 4h_position_in_range
+144. 4h_range_expansion
+145. 4h_volume_ratio_3
+146. 4h_volume_trend_3
+147. 4h_volume_ratio_7
+148. 4h_volume_trend_7
+149. 4h_volume_ratio_14
+150. 4h_volume_trend_14
+151. 4h_rsi_momentum
+152. 4h_macd_momentum
+153. 4h_stoch_momentum
+154. 4h_cmf_momentum
+155. 4h_bb_position_momentum
+156. 4h_adx_momentum
+157. 4h_price_volume_corr
+158. 4h_price_volume_divergence
+159. 1w_rsi_14
+160. 1w_rsi_21
+161. 1w_rsi_overbought
+162. 1w_rsi_oversold
+163. 1w_macd_line
+164. 1w_macd_signal
+165. 1w_macd_histogram
+166. 1w_macd_crossover
+167. 1w_bb_upper
+168. 1w_bb_middle
+169. 1w_bb_lower
+170. 1w_bb_width
+171. 1w_bb_percent
+172. 1w_ema_12
+173. 1w_ema_26
+174. 1w_ema_50
+175. 1w_ema_200
+176. 1w_ema_cross_12_26
+177. 1w_sma_20
+178. 1w_sma_50
+179. 1w_sma_200
+180. 1w_atr_14
+181. 1w_atr_pct
+182. 1w_stoch_k
+183. 1w_stoch_d
+184. 1w_stoch_overbought
+185. 1w_stoch_oversold
+186. 1w_adx_14
+187. 1w_obv
+188. 1w_cmf_20
+189. 1w_close_lag_1
+190. 1w_close_lag_2
+191. 1w_close_lag_3
+192. 1w_close_lag_4
+193. 1w_close_lag_5
+194. 1w_volume_lag_1
+195. 1w_volume_lag_2
+196. 1w_volume_lag_3
+197. 1w_volume_lag_4
+198. 1w_volume_lag_5
+199. 1w_price_vs_mean_3
+200. 1w_volatility_3
+201. 1w_trend_3
+202. 1w_price_vs_mean_5
+203. 1w_volatility_5
+204. 1w_trend_5
+205. 1w_price_vs_mean_7
+206. 1w_volatility_7
+207. 1w_trend_7
+208. 1w_price_vs_mean_14
+209. 1w_volatility_14
+210. 1w_trend_14
+211. 1w_momentum_1
+212. 1w_momentum_3
+213. 1w_momentum_5
+214. 1w_momentum_7
+215. 1w_momentum_14
+216. 1w_accel_1_3
+217. 1w_accel_3_5
+218. 1w_accel_5_7
+219. 1w_accel_7_14
+220. 1w_higher_highs_ratio
+221. 1w_lower_lows_ratio
+222. 1w_position_in_range
+223. 1w_range_expansion
+224. 1w_volume_ratio_3
+225. 1w_volume_trend_3
+226. 1w_volume_ratio_7
+227. 1w_volume_trend_7
+228. 1w_volume_ratio_14
+229. 1w_volume_trend_14
+230. 1w_rsi_momentum
+231. 1w_macd_momentum
+232. 1w_stoch_momentum
+233. 1w_cmf_momentum
+234. 1w_bb_position_momentum
+235. 1w_adx_momentum
+236. 1w_price_volume_corr
+237. 1w_price_volume_divergence
