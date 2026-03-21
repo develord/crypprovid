@@ -22,7 +22,9 @@ class LiveFeatureEngineComplete:
     """Calcul complet des 237 features en temps réel depuis Binance"""
 
     def __init__(self):
-        self.base_url = "https://api.binance.com/api/v3"
+        # Use data-api.binance.vision instead of api.binance.com to avoid 451 errors in restricted regions
+        # data-api.binance.vision works for public market data even from US-based servers like Render.com
+        self.base_url = "https://data-api.binance.vision/api/v3"
 
     def _get_binance_symbol(self, crypto_id: str) -> str:
         """Convert crypto ID to Binance symbol"""
@@ -35,7 +37,7 @@ class LiveFeatureEngineComplete:
 
     def fetch_klines(self, crypto_id: str, interval: str, limit: int = 500) -> pd.DataFrame:
         """
-        Récupère les klines depuis Binance
+        Récupère les klines depuis Binance avec retry et fallback
 
         Args:
             crypto_id: 'bitcoin', 'ethereum', or 'solana'
@@ -45,44 +47,67 @@ class LiveFeatureEngineComplete:
         Returns:
             DataFrame avec colonnes: timestamp, open, high, low, close, volume
         """
-        try:
-            symbol = self._get_binance_symbol(crypto_id)
-            url = f"{self.base_url}/klines"
+        import time
 
-            params = {
-                'symbol': symbol,
-                'interval': interval,
-                'limit': limit
-            }
+        symbol = self._get_binance_symbol(crypto_id)
+        url = f"{self.base_url}/klines"
 
-            response = requests.get(url, params=params, timeout=10)
-            response.raise_for_status()
+        params = {
+            'symbol': symbol,
+            'interval': interval,
+            'limit': limit
+        }
 
-            klines = response.json()
+        # Retry with exponential backoff
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                timeout = 5 + (attempt * 5)  # 5s, 10s, 15s
+                response = requests.get(url, params=params, timeout=timeout)
+                response.raise_for_status()
 
-            # Convert to DataFrame
-            df = pd.DataFrame(klines, columns=[
-                'timestamp', 'open', 'high', 'low', 'close', 'volume',
-                'close_time', 'quote_volume', 'trades', 'taker_buy_base',
-                'taker_buy_quote', 'ignore'
-            ])
+                klines = response.json()
 
-            # Keep only needed columns
-            df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+                # Convert to DataFrame
+                df = pd.DataFrame(klines, columns=[
+                    'timestamp', 'open', 'high', 'low', 'close', 'volume',
+                    'close_time', 'quote_volume', 'trades', 'taker_buy_base',
+                    'taker_buy_quote', 'ignore'
+                ])
 
-            # Convert types
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            for col in ['open', 'high', 'low', 'close', 'volume']:
-                df[col] = df[col].astype(float)
+                # Keep only needed columns
+                df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
 
-            df.set_index('timestamp', inplace=True)
+                # Convert types
+                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+                for col in ['open', 'high', 'low', 'close', 'volume']:
+                    df[col] = df[col].astype(float)
 
-            print(f"[LiveFeatures] Fetched {len(df)} {interval} klines for {crypto_id}")
-            return df
+                df.set_index('timestamp', inplace=True)
 
-        except Exception as e:
-            print(f"[LiveFeatures] Error fetching {interval} klines for {crypto_id}: {e}")
-            raise
+                print(f"[LiveFeatures] Fetched {len(df)} {interval} klines for {crypto_id}")
+                return df
+
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 451:
+                    print(f"[LiveFeatures] Binance API blocked (HTTP 451) for {crypto_id} {interval} - attempt {attempt+1}/{max_retries}")
+                    if attempt < max_retries - 1:
+                        time.sleep(2 ** attempt)  # 1s, 2s, 4s
+                        continue
+                else:
+                    print(f"[LiveFeatures] HTTP error {e.response.status_code} for {crypto_id} {interval} - attempt {attempt+1}/{max_retries}")
+                    if attempt < max_retries - 1:
+                        time.sleep(2 ** attempt)
+                        continue
+                    else:
+                        raise
+            except Exception as e:
+                print(f"[LiveFeatures] Error fetching {interval} klines for {crypto_id}: {e} - attempt {attempt+1}/{max_retries}")
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)
+                    continue
+                else:
+                    raise
 
     def calculate_complete_indicators(self, df: pd.DataFrame, prefix: str = "") -> pd.DataFrame:
         """

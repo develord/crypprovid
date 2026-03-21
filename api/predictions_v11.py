@@ -210,8 +210,15 @@ class PredictionServiceV11:
         model = self.models[crypto_id]
         threshold = self.thresholds.get(crypto_id, 0.35)
 
-        # Get LIVE features from Binance (avec multi-timeframe 1d+4h+1h)
-        features, current_price = self.live_engine.get_live_features(crypto_id)
+        # Try LIVE features from Binance first, fallback to CSV if fails
+        try:
+            features, current_price = self.live_engine.get_live_features(crypto_id)
+            data_source = "live"
+        except Exception as e:
+            print(f"[V11] Binance API failed for {crypto_id}: {e}")
+            print(f"[V11] Falling back to CSV data for {crypto_id}")
+            features, current_price = self.get_latest_features(crypto_id)
+            data_source = "csv"
 
         # Predict P(TP)
         prob_tp = model.predict_proba(features.reshape(1, -1))[0, 1]
@@ -250,6 +257,7 @@ class PredictionServiceV11:
             "current_price": round(current_price, 2),
             "risk_management": risk_management,
             "model_version": "v11_temporal",
+            "data_source": data_source,
             "timestamp": datetime.now().isoformat()
         }
 
