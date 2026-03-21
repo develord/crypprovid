@@ -1,7 +1,7 @@
 """
 FastAPI Server - Crypto Predictions API
 ========================================
-Serveur API pour les prédictions de cryptomonnaies avec modèles XGBoost V6
+Serveur API pour les prédictions de cryptomonnaies avec modèles V11 TEMPORAL
 """
 import sys
 import os
@@ -27,7 +27,7 @@ from models import (
     HealthCheckResponse,
     ErrorResponse
 )
-from predictions import PredictionService
+from predictions_v11 import get_prediction_service_v11
 
 # Configuration logging
 logging.basicConfig(
@@ -40,26 +40,22 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Crypto Predictions API",
     description="""
-    API de prédictions pour 8 cryptomonnaies utilisant des modèles XGBoost V6.
+    API de prédictions pour cryptomonnaies utilisant des modèles V11 TEMPORAL.
 
     ## Features
-    - Prédictions en temps réel (BUY/SELL/HOLD)
-    - Support de 8 cryptos majeures
-    - Probabilités de confiance
-    - Données historiques des prix
+    - Prédictions en temps réel (BUY/HOLD)
+    - Modèles multi-timeframe (1d + 4h + 1h)
+    - Triple Barrier: TP=+1.5%, SL=-0.75%
+    - Thresholds optimaux (BTC=0.37, ETH=0.35, SOL=0.35)
+    - Performance validée: +43.38% ROI portfolio
     - Documentation Swagger interactive
 
     ## Cryptos supportées
-    - Bitcoin (BTC)
-    - Ethereum (ETH)
-    - BNB (BNB)
-    - XRP (XRP)
-    - Cardano (ADA)
-    - Avalanche (AVAX)
-    - Polkadot (DOT)
-    - Solana (SOL)
+    - Bitcoin (BTC) - ROI +22.56%
+    - Ethereum (ETH) - ROI +45.07%
+    - Solana (SOL) - ROI +64.48%
     """,
-    version="1.0.0",
+    version="11.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     contact={
@@ -89,12 +85,13 @@ async def startup_event():
     """Load ML models on startup"""
     global prediction_service
     try:
-        logger.info("Starting API server...")
-        prediction_service = PredictionService()
+        logger.info("Starting API server with V11 TEMPORAL models...")
+        prediction_service = get_prediction_service_v11()
         await prediction_service.load_models()
-        logger.info(f"✅ API ready - {len(prediction_service.models)} models loaded")
+        logger.info(f"✅ API ready - {len(prediction_service.models)} V11 models loaded")
+        logger.info(f"   Thresholds: BTC={prediction_service.thresholds['bitcoin']}, ETH={prediction_service.thresholds['ethereum']}, SOL={prediction_service.thresholds['solana']}")
     except Exception as e:
-        logger.error(f"Failed to load models: {e}")
+        logger.error(f"Failed to load V11 models: {e}")
         raise
 
 
@@ -161,14 +158,23 @@ async def get_cryptos():
             detail="Service not initialized"
         )
 
-    # Add 'id' field to each crypto info
+    # V11 supported cryptos with metadata
     cryptos_with_id = {
-        crypto_id: {
-            "id": crypto_id,
-            "symbol": info["symbol"],
-            "name": info["name"]
+        "bitcoin": {
+            "id": "bitcoin",
+            "symbol": "BTCUSDT",
+            "name": "Bitcoin"
+        },
+        "ethereum": {
+            "id": "ethereum",
+            "symbol": "ETHUSDT",
+            "name": "Ethereum"
+        },
+        "solana": {
+            "id": "solana",
+            "symbol": "SOLUSDT",
+            "name": "Solana"
         }
-        for crypto_id, info in prediction_service.CRYPTO_INFO.items()
     }
 
     return {
@@ -269,10 +275,10 @@ async def get_prediction(crypto: str):
 @app.get(
     "/api/price/{crypto}",
     summary="Prix Actuel",
-    description="Obtenir le prix actuel d'une cryptomonnaie"
+    description="Obtenir le prix actuel d'une cryptomonnaie (inclus dans la prédiction)"
 )
 async def get_current_price(crypto: str):
-    """Get current price for cryptocurrency"""
+    """Get current price for cryptocurrency (from latest CSV data)"""
     if prediction_service is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -287,13 +293,19 @@ async def get_current_price(crypto: str):
         )
 
     try:
-        symbol = prediction_service.CRYPTO_INFO[crypto]["symbol"]
-        price = await prediction_service.get_current_price(symbol)
+        # Get price from latest features
+        _, current_price = prediction_service.get_latest_features(crypto)
+
+        symbols = {
+            'bitcoin': 'BTCUSDT',
+            'ethereum': 'ETHUSDT',
+            'solana': 'SOLUSDT'
+        }
 
         return {
             "crypto": crypto,
-            "symbol": symbol,
-            "price": price,
+            "symbol": symbols[crypto],
+            "price": round(current_price, 2),
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:

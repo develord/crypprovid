@@ -30,10 +30,12 @@ class PredictionResponse(BaseModel):
     symbol: str = Field(..., description="Trading symbol (BTCUSDT, ETHUSDT, etc.)")
     name: str = Field(..., description="Nom complet (Bitcoin, Ethereum, etc.)")
     signal: str = Field(..., description="Signal de trading: BUY, SELL, ou HOLD")
-    confidence: float = Field(..., description="Confiance (probabilité max)", ge=0, le=1)
-    probabilities: Probabilities = Field(..., description="Probabilités détaillées")
+    confidence: float = Field(..., description="Confiance (probabilité P(TP) pour V11)", ge=0, le=1)
+    probabilities: Optional[Probabilities] = Field(None, description="Probabilités détaillées (V6 uniquement)")
+    threshold: Optional[float] = Field(None, description="Threshold optimal utilisé (V11)", ge=0, le=1)
     current_price: float = Field(..., description="Prix actuel en USDT", gt=0)
     risk_management: Optional[RiskManagement] = Field(None, description="Gestion de risque (target, stop loss, take profit, R:R)")
+    model_version: Optional[str] = Field(None, description="Version du modèle (v11_temporal, v6, etc.)")
     timestamp: str = Field(..., description="Timestamp ISO de la prédiction")
 
     model_config = {

@@ -28,9 +28,7 @@ class Settings:
 
     # Paths
     BASE_DIR: Path = Path(__file__).parent.parent
-    MODELS_DIR: Path = BASE_DIR / "training" / "models" / "xgboost_v6"
-    DATA_DIR: Path = BASE_DIR / "data"
-    CACHE_DIR: Path = DATA_DIR / "cache"
+    MODELS_DIR: Path = BASE_DIR / "models" / "xgboost_v6"
 
     # Model configuration
     MODEL_VERSION: str = "v6"
@@ -44,10 +42,6 @@ class Settings:
     # Binance API (optionnel - pour prix en temps réel)
     BINANCE_API_KEY: str = os.getenv("BINANCE_API_KEY", "")
     BINANCE_SECRET_KEY: str = os.getenv("BINANCE_SECRET_KEY", "")
-
-    def __init__(self):
-        # Create directories if they don't exist
-        self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 settings = Settings()

@@ -15,8 +15,6 @@ import logging
 # Add project paths
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / 'training'))
-sys.path.insert(0, str(project_root / 'data'))
 
 from config import settings
 from models import PredictionResponse, Probabilities, RiskManagement
@@ -27,7 +25,6 @@ from xgboost_features import calculate_all_xgboost_features
 from xgboost_features_v6 import calculate_all_xgboost_features_v6
 from feature_selection_v5 import SELECTED_FEATURES_V5
 
-# Import indicator calculation functions from training without tensorflow
 import requests
 
 # Alias for compatibility
@@ -325,7 +322,11 @@ class PredictionService:
         logger.info("Loading XGBoost V6 models...")
 
         for crypto_id in self.CRYPTO_INFO.keys():
-            model_path = settings.MODELS_DIR / f"{crypto_id}_1d_xgboost_v6.pkl"
+            # Solana uses optimized model (V6 standard gave mediocre results)
+            if crypto_id == 'solana':
+                model_path = settings.MODELS_DIR / f"{crypto_id}_1d_xgboost_v6_optimized.pkl"
+            else:
+                model_path = settings.MODELS_DIR / f"{crypto_id}_1d_xgboost_v6.pkl"
 
             if not model_path.exists():
                 logger.warning(f"Model not found: {model_path}")
