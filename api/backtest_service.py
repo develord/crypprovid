@@ -31,8 +31,8 @@ class BacktestService:
         crypto_map = {'bitcoin': 'btc', 'ethereum': 'eth', 'solana': 'sol'}
         short_crypto = crypto_map.get(crypto.lower(), crypto.lower())
 
-        # Load optimized model
-        model_file = self.project_root / 'models' / f'{short_crypto}_v11_optimized.joblib'
+        # Load V11 classifier model
+        model_file = self.project_root / 'models' / f'{short_crypto}_v11_classifier.joblib'
         if not model_file.exists():
             raise FileNotFoundError(f"Model not found: {model_file}")
 
