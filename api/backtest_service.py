@@ -48,12 +48,9 @@ class BacktestService:
         crypto_map = {'bitcoin': 'btc', 'ethereum': 'eth', 'solana': 'sol'}
         short_crypto = crypto_map.get(crypto.lower(), crypto.lower())
 
-        # Load data from v11_cache with correct naming
-        # Convert short form back to full name for v11_cache files
-        full_name_map = {'btc': 'bitcoin', 'eth': 'ethereum', 'sol': 'solana'}
-        full_crypto = full_name_map.get(short_crypto, short_crypto)
-
-        cache_file = self.project_root / 'data' / 'v11_cache' / f'{full_crypto}_multi_tf_merged.csv'
+        # Load data from cache (same as training project!)
+        # Use SHORT form for cache files (btc, eth, sol) not full names
+        cache_file = Path(__file__).parent.parent.parent / 'crypto_v10_multi_tf' / 'data' / 'cache' / f'{short_crypto}_multi_tf_merged.csv'
         if not cache_file.exists():
             raise FileNotFoundError(f"Data file not found: {cache_file}")
 
@@ -141,12 +138,14 @@ class BacktestService:
         }
 
     def _simulate_trades(self, df: pd.DataFrame, tp_pct: float, sl_pct: float) -> List[Dict]:
-        """Simulate trades with fixed TP/SL"""
+        """Simulate trades with fixed TP/SL using high/low intra-candle prices"""
         trades = []
         in_position = False
         entry_idx = None
         entry_price = None
         entry_date = None
+        tp_price = None
+        sl_price = None
 
         for idx in range(len(df)):
             row = df.iloc[idx]
@@ -158,22 +157,25 @@ class BacktestService:
                 entry_idx = idx
                 entry_price = row['close']
                 entry_date = current_date
-                continue
+                # Calculate TP and SL prices
+                tp_price = entry_price * (1 + tp_pct / 100)
+                sl_price = entry_price * (1 - sl_pct / 100)
+                # DON'T continue - check exit on same candle!
 
-            # Check exit conditions
+            # Check exit conditions using high/low (same as training project)
             if in_position:
-                current_price = row['close']
-                pnl_pct = ((current_price - entry_price) / entry_price) * 100
+                high = row['high']
+                low = row['low']
 
-                # Take profit
-                if pnl_pct >= tp_pct:
+                # Check TP first (priority) - use HIGH
+                if high >= tp_price:
                     trades.append({
                         'entry_idx': entry_idx,
                         'exit_idx': idx,
                         'entry_date': entry_date,
                         'exit_date': current_date,
                         'entry_price': entry_price,
-                        'exit_price': current_price,
+                        'exit_price': tp_price,  # Exit at TP price
                         'pnl_pct': tp_pct,
                         'outcome': 'WIN',
                         'bars_held': idx - entry_idx
@@ -181,15 +183,15 @@ class BacktestService:
                     in_position = False
                     continue
 
-                # Stop loss
-                if pnl_pct <= -sl_pct:
+                # Check SL - use LOW
+                if low <= sl_price:
                     trades.append({
                         'entry_idx': entry_idx,
                         'exit_idx': idx,
                         'entry_date': entry_date,
                         'exit_date': current_date,
                         'entry_price': entry_price,
-                        'exit_price': current_price,
+                        'exit_price': sl_price,  # Exit at SL price
                         'pnl_pct': -sl_pct,
                         'outcome': 'LOSS',
                         'bars_held': idx - entry_idx
