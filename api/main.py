@@ -25,9 +25,12 @@ from models import (
     AllPredictionsResponse,
     CryptoListResponse,
     HealthCheckResponse,
-    ErrorResponse
+    ErrorResponse,
+    BacktestRequest,
+    BacktestResponse
 )
 from predictions_v11 import get_prediction_service_v11
+from backtest_service import get_backtest_service
 
 # Configuration logging
 logging.basicConfig(
@@ -76,20 +79,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize prediction service
+# Initialize services
 prediction_service = None
+backtest_service = None
 
 
 @app.on_event("startup")
 async def startup_event():
     """Load ML models on startup"""
-    global prediction_service
+    global prediction_service, backtest_service
     try:
         logger.info("Starting API server with V11 TEMPORAL models...")
         prediction_service = get_prediction_service_v11()
         await prediction_service.load_models()
         logger.info(f"✅ API ready - {len(prediction_service.models)} V11 models loaded")
         logger.info(f"   Thresholds: BTC={prediction_service.thresholds['bitcoin']}, ETH={prediction_service.thresholds['ethereum']}, SOL={prediction_service.thresholds['solana']}")
+
+        # Initialize backtest service
+        backtest_service = get_backtest_service()
+        logger.info("✅ Backtest service initialized")
     except Exception as e:
         logger.error(f"Failed to load V11 models: {e}")
         raise
@@ -313,6 +321,119 @@ async def get_current_price(crypto: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get price: {str(e)}"
+        )
+
+
+@app.post(
+    "/api/backtest",
+    response_model=BacktestResponse,
+    summary="Backtest Simulation",
+    description="Exécuter un backtest sur une période personnalisée avec un crypto spécifique",
+    responses={
+        200: {
+            "description": "Backtest exécuté avec succès",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "crypto": "bitcoin",
+                        "data": {
+                            "metrics": {
+                                "total_trades": 45,
+                                "win_trades": 28,
+                                "loss_trades": 15,
+                                "open_trades": 2,
+                                "win_rate": 0.622,
+                                "total_roi": 22.56,
+                                "avg_trade_roi": 0.501,
+                                "sharpe_ratio": 1.85,
+                                "max_drawdown": 5.2,
+                                "avg_bars_held": 8.4,
+                                "expected_value": 0.47,
+                                "tp_pct": 1.5,
+                                "sl_pct": 0.75,
+                                "prob_threshold": 0.5
+                            },
+                            "trades": [],
+                            "total_candles": 2184,
+                            "start_date": "2024-01-01",
+                            "end_date": "2024-12-31"
+                        }
+                    }
+                }
+            }
+        },
+        400: {
+            "description": "Paramètres invalides",
+            "model": ErrorResponse
+        },
+        404: {
+            "description": "Données ou modèle non trouvés",
+            "model": ErrorResponse
+        }
+    }
+)
+async def run_backtest(request: BacktestRequest):
+    """
+    Run backtest simulation on historical data
+
+    Args:
+        request: Backtest parameters (crypto, dates, TP/SL, threshold)
+
+    Returns:
+        Backtest results with trades and performance metrics
+    """
+    if backtest_service is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Backtest service not initialized"
+        )
+
+    # Validate crypto
+    crypto = request.crypto.lower()
+    valid_cryptos = ['bitcoin', 'ethereum', 'solana']
+    if crypto not in valid_cryptos:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid crypto '{crypto}'. Valid options: {valid_cryptos}"
+        )
+
+    try:
+        logger.info(f"Running backtest: {crypto} from {request.start_date} to {request.end_date}")
+
+        # Run backtest
+        results = backtest_service.run_backtest(
+            crypto=crypto,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            tp_pct=request.tp_pct,
+            sl_pct=request.sl_pct,
+            prob_threshold=request.prob_threshold
+        )
+
+        return {
+            "success": True,
+            "crypto": crypto,
+            "data": results
+        }
+
+    except FileNotFoundError as e:
+        logger.error(f"File not found: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except ValueError as e:
+        logger.error(f"Invalid parameters: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Backtest error for {crypto}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Backtest failed: {str(e)}"
         )
 
 

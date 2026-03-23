@@ -99,3 +99,118 @@ class ErrorResponse(BaseModel):
     error: str = Field(..., description="Message d'erreur")
     detail: Optional[str] = Field(None, description="Détails supplémentaires")
     timestamp: str = Field(..., description="Timestamp ISO")
+
+
+# ============================================================================
+# BACKTEST MODELS
+# ============================================================================
+
+class BacktestRequest(BaseModel):
+    """Request model for backtest"""
+    crypto: str = Field(..., description="Crypto (bitcoin, ethereum, solana)")
+    start_date: str = Field(..., description="Date de début (YYYY-MM-DD)")
+    end_date: str = Field(..., description="Date de fin (YYYY-MM-DD)")
+    tp_pct: Optional[float] = Field(1.5, description="Take profit %", gt=0)
+    sl_pct: Optional[float] = Field(0.75, description="Stop loss %", gt=0)
+    prob_threshold: Optional[float] = Field(0.5, description="Seuil de probabilité", ge=0, le=1)
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "crypto": "bitcoin",
+                "start_date": "2024-01-01",
+                "end_date": "2024-12-31",
+                "tp_pct": 1.5,
+                "sl_pct": 0.75,
+                "prob_threshold": 0.5
+            }
+        }
+    }
+
+
+class BacktestTrade(BaseModel):
+    """Individual trade from backtest"""
+    entry_date: str = Field(..., description="Date d'entrée")
+    exit_date: str = Field(..., description="Date de sortie")
+    entry_price: float = Field(..., description="Prix d'entrée", gt=0)
+    exit_price: float = Field(..., description="Prix de sortie", gt=0)
+    pnl_pct: float = Field(..., description="P&L en %")
+    pnl_usd: float = Field(..., description="P&L en USD")
+    outcome: str = Field(..., description="Résultat: WIN, LOSS, OPEN")
+    duration_hours: int = Field(..., description="Durée en heures", ge=0)
+
+
+class BacktestMetrics(BaseModel):
+    """Performance metrics from backtest"""
+    total_trades: int = Field(..., description="Nombre total de trades", ge=0)
+    win_trades: int = Field(..., description="Trades gagnants", ge=0)
+    loss_trades: int = Field(..., description="Trades perdants", ge=0)
+    open_trades: int = Field(..., description="Trades ouverts", ge=0)
+    win_rate: float = Field(..., description="Taux de réussite", ge=0, le=1)
+    total_roi: float = Field(..., description="ROI total en %")
+    avg_trade_roi: float = Field(..., description="ROI moyen par trade en %")
+    sharpe_ratio: float = Field(..., description="Ratio de Sharpe")
+    max_drawdown: float = Field(..., description="Drawdown maximum en %", ge=0)
+    avg_bars_held: float = Field(..., description="Durée moyenne de détention (barres)", ge=0)
+    expected_value: float = Field(..., description="Valeur attendue (EV) en %")
+    tp_pct: float = Field(..., description="Take profit % utilisé", gt=0)
+    sl_pct: float = Field(..., description="Stop loss % utilisé", gt=0)
+    prob_threshold: float = Field(..., description="Seuil de probabilité utilisé", ge=0, le=1)
+
+
+class BacktestData(BaseModel):
+    """Backtest result data"""
+    metrics: BacktestMetrics = Field(..., description="Métriques de performance")
+    trades: List[BacktestTrade] = Field(..., description="Liste des trades")
+    total_candles: int = Field(..., description="Nombre total de bougies", ge=0)
+    start_date: str = Field(..., description="Date de début")
+    end_date: str = Field(..., description="Date de fin")
+
+
+class BacktestResponse(BaseModel):
+    """Response model for backtest"""
+    success: bool = Field(..., description="Succès de l'opération")
+    crypto: str = Field(..., description="Crypto testée")
+    data: BacktestData = Field(..., description="Résultats du backtest")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "success": True,
+                "crypto": "bitcoin",
+                "data": {
+                    "metrics": {
+                        "total_trades": 45,
+                        "win_trades": 28,
+                        "loss_trades": 15,
+                        "open_trades": 2,
+                        "win_rate": 0.622,
+                        "total_roi": 22.56,
+                        "avg_trade_roi": 0.501,
+                        "sharpe_ratio": 1.85,
+                        "max_drawdown": 5.2,
+                        "avg_bars_held": 8.4,
+                        "expected_value": 0.47,
+                        "tp_pct": 1.5,
+                        "sl_pct": 0.75,
+                        "prob_threshold": 0.5
+                    },
+                    "trades": [
+                        {
+                            "entry_date": "2024-01-15 08:00:00",
+                            "exit_date": "2024-01-16 12:00:00",
+                            "entry_price": 42500.0,
+                            "exit_price": 43137.5,
+                            "pnl_pct": 1.5,
+                            "pnl_usd": 637.5,
+                            "outcome": "WIN",
+                            "duration_hours": 28
+                        }
+                    ],
+                    "total_candles": 2184,
+                    "start_date": "2024-01-01",
+                    "end_date": "2024-12-31"
+                }
+            }
+        }
+    }
