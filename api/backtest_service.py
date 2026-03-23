@@ -48,8 +48,12 @@ class BacktestService:
         crypto_map = {'bitcoin': 'btc', 'ethereum': 'eth', 'solana': 'sol'}
         short_crypto = crypto_map.get(crypto.lower(), crypto.lower())
 
-        # Load data
-        cache_file = self.project_root / 'data' / 'cache' / f'{short_crypto}_multi_tf_merged.csv'
+        # Load data from v11_cache with correct naming
+        # Convert short form back to full name for v11_cache files
+        full_name_map = {'btc': 'bitcoin', 'eth': 'ethereum', 'sol': 'solana'}
+        full_crypto = full_name_map.get(short_crypto, short_crypto)
+
+        cache_file = self.project_root / 'data' / 'v11_cache' / f'{full_crypto}_multi_tf_merged.csv'
         if not cache_file.exists():
             raise FileNotFoundError(f"Data file not found: {cache_file}")
 
