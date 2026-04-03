@@ -29,8 +29,11 @@ from models import (
     BacktestRequest,
     BacktestResponse
 )
-from predictions_v11 import get_prediction_service_v11
-from backtest_service import get_backtest_service
+from predictions_cnn import CNNPredictionService
+try:
+    from backtest_service import get_backtest_service
+except:
+    get_backtest_service = None
 
 # Configuration logging
 logging.basicConfig(
@@ -86,21 +89,21 @@ backtest_service = None
 
 @app.on_event("startup")
 async def startup_event():
-    """Load ML models on startup"""
+    """Load CNN models on startup"""
     global prediction_service, backtest_service
     try:
-        logger.info("Starting API server with V11 TEMPORAL models...")
-        prediction_service = get_prediction_service_v11()
+        logger.info("Starting API server with CNN LONG+SHORT models...")
+        prediction_service = CNNPredictionService()
         await prediction_service.load_models()
-        logger.info(f"✅ API ready - {len(prediction_service.models)} V11 models loaded")
-        logger.info(f"   Thresholds: BTC={prediction_service.thresholds['bitcoin']}, ETH={prediction_service.thresholds['ethereum']}, SOL={prediction_service.thresholds['solana']}")
+        logger.info(f"API ready - {len(prediction_service.models)} CNN models loaded")
+        logger.info(f"Coins: BTC, ETH, SOL, DOGE, AVAX (LONG + SHORT)")
 
-        # Initialize backtest service
-        backtest_service = get_backtest_service()
-        logger.info("✅ Backtest service initialized")
+        if get_backtest_service:
+            backtest_service = get_backtest_service()
+            logger.info("Backtest service initialized")
     except Exception as e:
-        logger.error(f"Failed to load V11 models: {e}")
-        raise
+        logger.error(f"Failed to load CNN models: {e}")
+        prediction_service = CNNPredictionService()  # Empty service, will load on demand
 
 
 @app.on_event("shutdown")
@@ -166,22 +169,42 @@ async def get_cryptos():
             detail="Service not initialized"
         )
 
-    # V11 supported cryptos with metadata
+    # All supported cryptos with metadata
     cryptos_with_id = {
         "bitcoin": {
             "id": "bitcoin",
             "symbol": "BTCUSDT",
-            "name": "Bitcoin"
+            "name": "Bitcoin",
+            "models": ["CNN_LONG"],
+            "status": "active"
         },
         "ethereum": {
             "id": "ethereum",
             "symbol": "ETHUSDT",
-            "name": "Ethereum"
+            "name": "Ethereum",
+            "models": ["CNN_LONG", "CNN_SHORT"],
+            "status": "active"
         },
         "solana": {
             "id": "solana",
             "symbol": "SOLUSDT",
-            "name": "Solana"
+            "name": "Solana",
+            "models": ["CNN_LONG", "CNN_SHORT"],
+            "status": "active"
+        },
+        "dogecoin": {
+            "id": "dogecoin",
+            "symbol": "DOGEUSDT",
+            "name": "Dogecoin",
+            "models": ["CNN_LONG", "CNN_SHORT"],
+            "status": "active"
+        },
+        "avalanche": {
+            "id": "avalanche",
+            "symbol": "AVAXUSDT",
+            "name": "Avalanche",
+            "models": ["CNN_LONG", "CNN_SHORT"],
+            "status": "active"
         }
     }
 
@@ -190,34 +213,6 @@ async def get_cryptos():
         "count": len(cryptos_with_id)
     }
 
-
-@app.get(
-    "/api/predictions/all",
-    response_model=AllPredictionsResponse,
-    summary="Toutes les Prédictions",
-    description="Obtenir les prédictions pour toutes les cryptomonnaies en une seule requête"
-)
-async def get_all_predictions():
-    """Get predictions for all cryptocurrencies"""
-    if prediction_service is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Service not initialized"
-        )
-
-    try:
-        predictions = await prediction_service.predict_all()
-        return {
-            "predictions": predictions,
-            "timestamp": datetime.now().isoformat(),
-            "count": len(predictions)
-        }
-    except Exception as e:
-        logger.error(f"Error getting all predictions: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate predictions: {str(e)}"
-        )
 
 
 @app.get(
@@ -254,7 +249,7 @@ async def get_all_predictions():
     }
 )
 async def get_prediction(crypto: str):
-    """Get prediction for specific cryptocurrency"""
+    """Get prediction for specific cryptocurrency using CNN LONG+SHORT models"""
     if prediction_service is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -262,11 +257,11 @@ async def get_prediction(crypto: str):
         )
 
     crypto = crypto.lower()
-    if crypto not in prediction_service.models:
-        available = list(prediction_service.models.keys())
+    supported = ['bitcoin', 'ethereum', 'solana', 'dogecoin', 'avalanche']
+    if crypto not in supported:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Crypto '{crypto}' not found. Available: {available}"
+            detail=f"Crypto '{crypto}' not found. Available: {supported}"
         )
 
     try:
