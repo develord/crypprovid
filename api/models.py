@@ -16,10 +16,12 @@ class Probabilities(BaseModel):
 
 class RiskManagement(BaseModel):
     """Risk management metrics"""
-    target_price: Optional[float] = Field(None, description="Prix cible", gt=0)
-    stop_loss: Optional[float] = Field(None, description="Prix stop loss", gt=0)
-    take_profit: Optional[float] = Field(None, description="Prix take profit", gt=0)
-    risk_reward_ratio: Optional[float] = Field(None, description="Ratio Risk:Reward", gt=0)
+    target_price: Optional[float] = Field(None, description="Prix cible")
+    stop_loss: Optional[float] = Field(None, description="Prix stop loss")
+    take_profit: Optional[float] = Field(None, description="Prix take profit")
+    take_profit_pct: Optional[float] = Field(None, description="TP en %")
+    stop_loss_pct: Optional[float] = Field(None, description="SL en %")
+    risk_reward_ratio: Optional[float] = Field(None, description="Ratio Risk:Reward")
     potential_gain_percent: Optional[float] = Field(None, description="Gain potentiel en %")
     potential_loss_percent: Optional[float] = Field(None, description="Perte potentielle en %")
 
@@ -30,12 +32,22 @@ class PredictionResponse(BaseModel):
     symbol: str = Field(..., description="Trading symbol (BTCUSDT, ETHUSDT, etc.)")
     name: str = Field(..., description="Nom complet (Bitcoin, Ethereum, etc.)")
     signal: str = Field(..., description="Signal de trading: BUY, SELL, ou HOLD")
-    confidence: float = Field(..., description="Confiance (probabilité P(TP) pour V11)", ge=0, le=1)
-    probabilities: Optional[Probabilities] = Field(None, description="Probabilités détaillées (V6 uniquement)")
-    threshold: Optional[float] = Field(None, description="Threshold optimal utilisé (V11)", ge=0, le=1)
-    current_price: float = Field(..., description="Prix actuel en USDT", gt=0)
-    risk_management: Optional[RiskManagement] = Field(None, description="Gestion de risque (target, stop loss, take profit, R:R)")
-    model_version: Optional[str] = Field(None, description="Version du modèle (v11_temporal, v6, etc.)")
+    direction: Optional[str] = Field(None, description="Direction: LONG, SHORT, ou null")
+    confidence: float = Field(..., description="Confiance du signal actif", ge=0, le=1)
+    long_confidence: Optional[float] = Field(None, description="Confiance LONG (0-1)")
+    short_confidence: Optional[float] = Field(None, description="Confiance SHORT (0-1)")
+    long_filter: Optional[str] = Field(None, description="Raison filtre LONG (bear_market, etc.)")
+    short_filter: Optional[str] = Field(None, description="Raison filtre SHORT (bull_market, etc.)")
+    meta_long_prob: Optional[float] = Field(None, description="Meta-model LONG probability")
+    meta_short_prob: Optional[float] = Field(None, description="Meta-model SHORT probability")
+    probabilities: Optional[Probabilities] = Field(None, description="Probabilités détaillées (legacy)")
+    threshold: Optional[float] = Field(None, description="Threshold optimal", ge=0, le=1)
+    current_price: Optional[float] = Field(None, description="Prix actuel en USDT")
+    risk_management: Optional[RiskManagement] = Field(None, description="Gestion de risque (TP, SL, R:R)")
+    model: Optional[str] = Field(None, description="Nom du modèle (CNN_1D_MultiScale + XGBoost_Meta)")
+    features: Optional[str] = Field(None, description="Features utilisées")
+    data_source: Optional[str] = Field(None, description="Source des données (binance_live)")
+    model_version: Optional[str] = Field(None, description="Version du modèle")
     timestamp: str = Field(..., description="Timestamp ISO de la prédiction")
 
     model_config = {
@@ -78,6 +90,8 @@ class CryptoInfo(BaseModel):
     id: str = Field(..., description="Crypto ID")
     symbol: str = Field(..., description="Trading symbol")
     name: str = Field(..., description="Nom complet")
+    models: Optional[List[str]] = Field(None, description="Modèles disponibles")
+    status: Optional[str] = Field(None, description="Statut")
 
 
 class CryptoListResponse(BaseModel):

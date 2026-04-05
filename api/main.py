@@ -92,11 +92,11 @@ async def startup_event():
     """Load CNN models on startup"""
     global prediction_service, backtest_service
     try:
-        logger.info("Starting API server with CNN LONG+SHORT models...")
+        logger.info("Starting API server with CNN+Meta V3 models...")
         prediction_service = CNNPredictionService()
         await prediction_service.load_models()
         logger.info(f"API ready - {len(prediction_service.models)} CNN models loaded")
-        logger.info(f"Coins: BTC, ETH, SOL, DOGE, AVAX (LONG + SHORT)")
+        logger.info(f"Coins: BTC, ETH, SOL, DOGE, AVAX, XRP, LINK, ADA, NEAR (LONG + SHORT + Meta)")
 
         if get_backtest_service:
             backtest_service = get_backtest_service()
@@ -205,6 +205,34 @@ async def get_cryptos():
             "name": "Avalanche",
             "models": ["CNN_LONG", "CNN_SHORT"],
             "status": "active"
+        },
+        "xrp": {
+            "id": "xrp",
+            "symbol": "XRPUSDT",
+            "name": "XRP",
+            "models": ["CNN_LONG", "CNN_SHORT"],
+            "status": "active"
+        },
+        "chainlink": {
+            "id": "chainlink",
+            "symbol": "LINKUSDT",
+            "name": "Chainlink",
+            "models": ["CNN_LONG", "CNN_SHORT"],
+            "status": "active"
+        },
+        "cardano": {
+            "id": "cardano",
+            "symbol": "ADAUSDT",
+            "name": "Cardano",
+            "models": ["CNN_LONG", "CNN_SHORT"],
+            "status": "active"
+        },
+        "near": {
+            "id": "near",
+            "symbol": "NEARUSDT",
+            "name": "NEAR Protocol",
+            "models": ["CNN_LONG", "CNN_SHORT"],
+            "status": "active"
         }
     }
 
@@ -257,7 +285,7 @@ async def get_prediction(crypto: str):
         )
 
     crypto = crypto.lower()
-    supported = ['bitcoin', 'ethereum', 'solana', 'dogecoin', 'avalanche']
+    supported = ['bitcoin', 'ethereum', 'solana', 'dogecoin', 'avalanche', 'xrp', 'chainlink', 'cardano', 'near']
     if crypto not in supported:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
