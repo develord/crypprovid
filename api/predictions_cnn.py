@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 from datetime import datetime
 
-from direction_prediction_model import CNNDirectionModel
+from direction_prediction_model import CNNDirectionModel, DeepCNNShortModel
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,13 @@ COIN_CONFIG = {
     },
     'solana':    {'symbol': 'SOL/USDT',  'short_name': 'sol',  'long_conf': 0.60, 'short_conf': 0.55, 'start': '2020-08-01'},
     'dogecoin':  {'symbol': 'DOGE/USDT', 'short_name': 'doge', 'long_conf': 0.60, 'short_conf': 0.55, 'start': '2019-07-01'},
-    'avalanche': {'symbol': 'AVAX/USDT', 'short_name': 'avax', 'long_conf': 0.60, 'short_conf': 0.55, 'start': '2020-09-01'},
+    'avalanche': {
+        'symbol': 'AVAX/USDT', 'short_name': 'avax',
+        'long_conf': 0.60, 'short_conf': 0.50,
+        'long_meta_conf': 0.0, 'short_meta_conf': 0.0,
+        'cooldown_days': 5, 'max_consec_losses': 3,
+        'start': '2020-09-01', 'v3': True,
+    },
     'xrp':       {'symbol': 'XRP/USDT',  'short_name': 'xrp',  'long_conf': 0.55, 'short_conf': 0.68, 'start': '2018-01-01'},
     'chainlink': {'symbol': 'LINK/USDT', 'short_name': 'link', 'long_conf': 0.85, 'short_conf': 0.55, 'start': '2017-12-01'},
     'cardano':   {'symbol': 'ADA/USDT',  'short_name': 'ada',  'long_conf': 0.65, 'short_conf': 0.55, 'start': '2018-04-01'},
@@ -86,7 +92,12 @@ class CNNPredictionService:
         feature_dim = ckpt.get('feature_dim', 99)
         seq_len = ckpt.get('sequence_length', 30)
         temperature = ckpt.get('temperature', 1.0)
-        model = CNNDirectionModel(feature_dim=feature_dim, sequence_length=seq_len, dropout=0.4)
+        # Auto-detect DeepCNNShortModel by state_dict keys
+        is_deep = any('conv3_1' in k or 'conv9_1' in k for k in ckpt['model_state_dict'].keys())
+        if is_deep:
+            model = DeepCNNShortModel(feature_dim=feature_dim, sequence_length=seq_len, dropout=0.35)
+        else:
+            model = CNNDirectionModel(feature_dim=feature_dim, sequence_length=seq_len, dropout=0.4)
         model.load_state_dict(ckpt['model_state_dict'])
         model.eval()
         return model, seq_len, temperature
