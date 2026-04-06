@@ -1,17 +1,12 @@
 """
-CNN + Meta-XGBoost PREDICTION SERVICE (V3)
-==========================================
-Prediction service using CNN LONG+SHORT + XGBoost Meta models.
-
-BTC uses:
-- Temperature-calibrated confidence
-- XGBoost meta-model filtering
-- Market regime features (28 extra)
-- Bear features for SHORT (15 extra)
-- ATR symmetric TP/SL (matches training)
-- LONG CNN >= 75% (bear market strict)
-
-Other coins: legacy CNN LONG+SHORT (unchanged).
+CNN + Meta-XGBoost PREDICTION SERVICE (V3 Production)
+=====================================================
+Exactly matches backtest pipeline:
+- Same feature engineering (multi-TF indicators, cross-TF, non-tech, market regime, bear features)
+- ETH includes BTC influence features (29 extra)
+- Same optimizer configs (thresholds, cooldown, max_consec_losses, filters)
+- ATR symmetric TP/SL for all V3 coins
+- Meta-model filtering with calibrated thresholds
 """
 
 import torch
@@ -27,20 +22,37 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 from datetime import datetime
 
-from direction_prediction_model import CNNDirectionModel, DeepCNNShortModel
+from direction_prediction_model import CNNDirectionModel
 
 logger = logging.getLogger(__name__)
 
+# ============================================================================
+# COIN CONFIGS — Exactly match optimizer results
+# ============================================================================
+# BTC optimizer: WR:59.1% Ret:+83.2% LCNN>=0.55 SCNN>=0.50 LMeta>=0.45 SMeta>=0.50 CD:5 MC:3
+# ETH optimizer: WR:62.5% Ret:+46.2% LCNN>=0.55 SCNN>=0.50 LMeta>=0.00 SMeta>=0.45 CD:5 MC:3
 COIN_CONFIG = {
-    'bitcoin':    {'symbol': 'BTC/USDT', 'short_name': 'btc',  'long_conf': 0.75, 'short_conf': 0.55, 'long_meta_conf': 0.45, 'short_meta_conf': 0.50, 'start': '2017-01-01'},
-    'ethereum':   {'symbol': 'ETH/USDT', 'short_name': 'eth',  'long_conf': 0.60, 'short_conf': 0.55, 'start': '2018-01-01'},
-    'solana':     {'symbol': 'SOL/USDT', 'short_name': 'sol',  'long_conf': 0.60, 'short_conf': 0.55, 'start': '2020-08-01'},
-    'dogecoin':   {'symbol': 'DOGE/USDT','short_name': 'doge', 'long_conf': 0.60, 'short_conf': 0.55, 'start': '2019-07-01'},
-    'avalanche':  {'symbol': 'AVAX/USDT','short_name': 'avax', 'long_conf': 0.60, 'short_conf': 0.55, 'start': '2020-09-01'},
-    'xrp':        {'symbol': 'XRP/USDT', 'short_name': 'xrp',  'long_conf': 0.55, 'short_conf': 0.68, 'start': '2018-01-01'},
-    'chainlink':  {'symbol': 'LINK/USDT','short_name': 'link', 'long_conf': 0.85, 'short_conf': 0.55, 'start': '2017-12-01'},
-    'cardano':    {'symbol': 'ADA/USDT', 'short_name': 'ada',  'long_conf': 0.65, 'short_conf': 0.55, 'start': '2018-04-01'},
-    'near':       {'symbol': 'NEAR/USDT','short_name': 'near', 'long_conf': 0.70, 'short_conf': 0.52, 'start': '2020-10-01'},
+    'bitcoin': {
+        'symbol': 'BTC/USDT', 'short_name': 'btc',
+        'long_conf': 0.55, 'short_conf': 0.50,
+        'long_meta_conf': 0.45, 'short_meta_conf': 0.50,
+        'cooldown_days': 5, 'max_consec_losses': 3,
+        'start': '2017-01-01', 'v3': True,
+    },
+    'ethereum': {
+        'symbol': 'ETH/USDT', 'short_name': 'eth',
+        'long_conf': 0.55, 'short_conf': 0.50,
+        'long_meta_conf': 0.0, 'short_meta_conf': 0.45,
+        'cooldown_days': 5, 'max_consec_losses': 3,
+        'start': '2018-01-01', 'v3': True, 'btc_influence': True,
+    },
+    'solana':    {'symbol': 'SOL/USDT',  'short_name': 'sol',  'long_conf': 0.60, 'short_conf': 0.55, 'start': '2020-08-01'},
+    'dogecoin':  {'symbol': 'DOGE/USDT', 'short_name': 'doge', 'long_conf': 0.60, 'short_conf': 0.55, 'start': '2019-07-01'},
+    'avalanche': {'symbol': 'AVAX/USDT', 'short_name': 'avax', 'long_conf': 0.60, 'short_conf': 0.55, 'start': '2020-09-01'},
+    'xrp':       {'symbol': 'XRP/USDT',  'short_name': 'xrp',  'long_conf': 0.55, 'short_conf': 0.68, 'start': '2018-01-01'},
+    'chainlink': {'symbol': 'LINK/USDT', 'short_name': 'link', 'long_conf': 0.85, 'short_conf': 0.55, 'start': '2017-12-01'},
+    'cardano':   {'symbol': 'ADA/USDT',  'short_name': 'ada',  'long_conf': 0.65, 'short_conf': 0.55, 'start': '2018-04-01'},
+    'near':      {'symbol': 'NEAR/USDT', 'short_name': 'near', 'long_conf': 0.70, 'short_conf': 0.52, 'start': '2020-10-01'},
 }
 
 SEQ_LEN = 30
@@ -61,41 +73,30 @@ class CNNPredictionService:
         self.short_seq_lens = {}
         self.long_temps = {}
         self.short_temps = {}
-        # Meta-models (XGBoost)
         self.meta_long_models = {}
         self.meta_short_models = {}
         self.meta_features = {}
         self.exchange = ccxt.binance({'enableRateLimit': True})
-        logger.info("[CNN+Meta] Prediction Service initialized")
+        logger.info("[CNN+Meta V3] Prediction Service initialized")
 
-    def _load_model(self, path, is_short=False):
+    def _load_model(self, path):
         if not path.exists():
             return None, 30, 1.0
         ckpt = torch.load(path, map_location='cpu', weights_only=False)
         feature_dim = ckpt.get('feature_dim', 99)
         seq_len = ckpt.get('sequence_length', 30)
         temperature = ckpt.get('temperature', 1.0)
-        model_type = ckpt.get('model_type', 'cnn')
-
-        if model_type == 'deep_cnn_short' and is_short:
-            try:
-                model = DeepCNNShortModel(feature_dim=feature_dim, sequence_length=seq_len, dropout=0.35)
-                model.load_state_dict(ckpt['model_state_dict'])
-            except Exception:
-                model = CNNDirectionModel(feature_dim=feature_dim, sequence_length=seq_len, dropout=0.4)
-                model.load_state_dict(ckpt['model_state_dict'])
-        else:
-            model = CNNDirectionModel(feature_dim=feature_dim, sequence_length=seq_len, dropout=0.4)
-            model.load_state_dict(ckpt['model_state_dict'])
+        model = CNNDirectionModel(feature_dim=feature_dim, sequence_length=seq_len, dropout=0.4)
+        model.load_state_dict(ckpt['model_state_dict'])
         model.eval()
         return model, seq_len, temperature
 
     async def load_models(self):
-        logger.info("[CNN+Meta] Loading models...")
+        logger.info("[CNN+Meta V3] Loading models...")
         for crypto_id, cfg in COIN_CONFIG.items():
             sn = cfg['short_name']
 
-            # LONG
+            # LONG model
             m, sl, temp = self._load_model(self.models_dir / f'{sn}_cnn_model.pt')
             if m:
                 self.long_models[crypto_id] = m
@@ -106,10 +107,10 @@ class CNNPredictionService:
                 f = self.models_dir / f'{sn}_features.json'
                 if f.exists():
                     with open(f) as fh: self.long_features[crypto_id] = json.load(fh)
-                logger.info(f"  [OK] {crypto_id} LONG (temp={temp:.3f})")
+                logger.info(f"  [OK] {crypto_id} LONG (temp={temp:.3f}, feat={len(self.long_features.get(crypto_id, []))})")
 
-            # SHORT
-            m, sl, temp = self._load_model(self.models_dir / f'{sn}_short_cnn_model.pt', is_short=True)
+            # SHORT model
+            m, sl, temp = self._load_model(self.models_dir / f'{sn}_short_cnn_model.pt')
             if m:
                 self.short_models[crypto_id] = m
                 self.short_seq_lens[crypto_id] = sl
@@ -119,43 +120,45 @@ class CNNPredictionService:
                 f = self.models_dir / f'{sn}_short_features.json'
                 if f.exists():
                     with open(f) as fh: self.short_features[crypto_id] = json.load(fh)
-                logger.info(f"  [OK] {crypto_id} SHORT (temp={temp:.3f})")
+                logger.info(f"  [OK] {crypto_id} SHORT (temp={temp:.3f}, feat={len(self.short_features.get(crypto_id, []))})")
 
-            # META (XGBoost) - only for coins that have them
-            ml_path = self.models_dir / f'{sn}_meta_long.joblib'
-            ms_path = self.models_dir / f'{sn}_meta_short.joblib'
-            mf_path = self.models_dir / f'{sn}_meta_features.json'
-            if ml_path.exists():
-                self.meta_long_models[crypto_id] = joblib.load(ml_path)
+            # META models
+            ml = self.models_dir / f'{sn}_meta_long.joblib'
+            ms = self.models_dir / f'{sn}_meta_short.joblib'
+            mf = self.models_dir / f'{sn}_meta_features.json'
+            if ml.exists():
+                self.meta_long_models[crypto_id] = joblib.load(ml)
                 logger.info(f"  [OK] {crypto_id} META LONG")
-            if ms_path.exists():
-                self.meta_short_models[crypto_id] = joblib.load(ms_path)
+            if ms.exists():
+                self.meta_short_models[crypto_id] = joblib.load(ms)
                 logger.info(f"  [OK] {crypto_id} META SHORT")
-            if mf_path.exists():
-                with open(mf_path) as fh:
-                    self.meta_features[crypto_id] = json.load(fh)
+            if mf.exists():
+                with open(mf) as fh: self.meta_features[crypto_id] = json.load(fh)
 
         total = len(self.long_models) + len(self.short_models)
         meta_total = len(self.meta_long_models) + len(self.meta_short_models)
-        logger.info(f"[CNN+Meta] Loaded {total} CNN + {meta_total} Meta models")
+        logger.info(f"[CNN+Meta V3] Loaded {total} CNN + {meta_total} Meta models")
 
     def get_live_price(self, crypto_id: str) -> Optional[float]:
         try:
-            symbol = COIN_CONFIG[crypto_id]['symbol']
-            ticker = self.exchange.fetch_ticker(symbol)
+            ticker = self.exchange.fetch_ticker(COIN_CONFIG[crypto_id]['symbol'])
             return ticker['last']
         except Exception as e:
             logger.error(f"Price error {crypto_id}: {e}")
             return None
 
-    def _download_ohlcv(self, crypto_id: str, timeframe: str, limit: int = 300):
-        symbol = COIN_CONFIG[crypto_id]['symbol']
+    def _download_ohlcv(self, symbol: str, timeframe: str, limit: int = 300):
         ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
         df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['date'] = pd.to_datetime(df['timestamp'], unit='ms')
         return df
 
+    # ========================================================================
+    # FEATURE ENGINEERING — Exact match with 02_feature_engineering.py
+    # ========================================================================
+
     def _create_indicators(self, df, prefix=''):
+        """Technical indicators — matches training exactly"""
         df[f'{prefix}rsi_14'] = ta.momentum.RSIIndicator(df['close'], window=14).rsi()
         df[f'{prefix}rsi_21'] = ta.momentum.RSIIndicator(df['close'], window=21).rsi()
         macd = ta.trend.MACD(df['close'])
@@ -184,10 +187,13 @@ class CNNPredictionService:
         return df
 
     def _add_cross_tf_and_non_tech(self, df):
+        """Cross-TF alignment + non-technical — matches training exactly"""
+        # Cross-TF RSI diffs
         for tf1, tf2 in [('1d', '4h'), ('1d', '1w'), ('4h', '1w')]:
             c1, c2 = f'{tf1}_rsi_14', f'{tf2}_rsi_14'
             if c1 in df.columns and c2 in df.columns:
                 df[f'rsi_diff_{tf1}_{tf2}'] = df[c1] - df[c2]
+        # Counts across TFs
         rsi_cols = [c for c in df.columns if c.endswith('_rsi_14')]
         if len(rsi_cols) >= 2:
             df['rsi_bullish_count'] = sum((df[c] > 50).astype(int) for c in rsi_cols)
@@ -207,7 +213,7 @@ class CNNPredictionService:
         if len(vol_cols) >= 2:
             df['vol_mean_all_tf'] = sum(df[c] for c in vol_cols) / len(vol_cols)
 
-        # Non-technical
+        # Non-technical features
         df['daily_range_pct'] = (df['high'] - df['low']) / df['close']
         df['daily_range_ma5'] = df['daily_range_pct'].rolling(5).mean()
         df['daily_range_ma20'] = df['daily_range_pct'].rolling(20).mean()
@@ -241,7 +247,7 @@ class CNNPredictionService:
         return df
 
     def _add_market_regime_features(self, df):
-        """Market regime features -- matches BTC training exactly"""
+        """28 market regime features — matches training exactly"""
         sma_50 = df['close'].rolling(50).mean()
         sma_200 = df['close'].rolling(200).mean()
         df['sma_50'] = sma_50
@@ -289,7 +295,7 @@ class CNNPredictionService:
         return df
 
     def _add_bear_features(self, df):
-        """Bear features for SHORT model -- matches BTC training exactly"""
+        """15 bear features for SHORT — matches training exactly"""
         for w in [10, 20, 50]:
             sma = df['close'].rolling(w).mean()
             df[f'price_above_sma{w}_pct'] = (df['close'] / sma - 1) * 100
@@ -298,7 +304,9 @@ class CNNPredictionService:
         df['roc_deceleration'] = df['roc_5'] - df['roc_10']
         price_change_5 = df['close'].pct_change(5)
         vol_change_5 = df['volume'].pct_change(5)
-        df['vol_price_divergence'] = np.where((price_change_5 > 0) & (vol_change_5 < 0), 1, np.where((price_change_5 < 0) & (vol_change_5 > 0), -1, 0))
+        df['vol_price_divergence'] = np.where(
+            (price_change_5 > 0) & (vol_change_5 < 0), 1,
+            np.where((price_change_5 < 0) & (vol_change_5 > 0), -1, 0))
         df['is_red'] = (df['close'] < df['open']).astype(int)
         df['consec_red'] = 0
         for i in range(1, len(df)):
@@ -311,32 +319,108 @@ class CNNPredictionService:
         if '1d_rsi_14' in df.columns:
             df['rsi_slope_5'] = df['1d_rsi_14'].diff(5)
             df['price_slope_5'] = df['close'].pct_change(5) * 100
-            df['rsi_price_divergence'] = np.where((df['price_slope_5'] > 0) & (df['rsi_slope_5'] < 0), 1, np.where((df['price_slope_5'] < 0) & (df['rsi_slope_5'] > 0), -1, 0))
+            df['rsi_price_divergence'] = np.where(
+                (df['price_slope_5'] > 0) & (df['rsi_slope_5'] < 0), 1,
+                np.where((df['price_slope_5'] < 0) & (df['rsi_slope_5'] > 0), -1, 0))
         return df
+
+    def _add_btc_influence_features(self, df):
+        """29 BTC influence features for ETH — matches training exactly"""
+        btc_ohlcv = self._download_ohlcv('BTC/USDT', '1d', 300)
+        btc_cols = btc_ohlcv[['date', 'close', 'volume', 'high', 'low']].rename(
+            columns={'close': 'btc_close', 'volume': 'btc_volume', 'high': 'btc_high', 'low': 'btc_low'})
+        df = pd.merge_asof(df.sort_values('date'), btc_cols.sort_values('date'), on='date', direction='backward')
+
+        # ETH/BTC ratio
+        df['eth_btc_ratio'] = df['close'] / (df['btc_close'] + 1e-10)
+        df['eth_btc_ratio_sma20'] = df['eth_btc_ratio'].rolling(20).mean()
+        df['eth_btc_ratio_position'] = (df['eth_btc_ratio'] / df['eth_btc_ratio_sma20'] - 1) * 100
+        df['eth_btc_ratio_trend'] = df['eth_btc_ratio'].pct_change(5) * 100
+
+        # Correlation
+        eth_ret = df['close'].pct_change()
+        btc_ret = df['btc_close'].pct_change()
+        for w in [7, 14, 30]:
+            df[f'eth_btc_corr_{w}'] = eth_ret.rolling(w).corr(btc_ret)
+
+        # BTC momentum
+        for p in [5, 10, 20]:
+            df[f'btc_momentum_{p}'] = df['btc_close'].pct_change(p) * 100
+            df[f'eth_momentum_{p}'] = df['close'].pct_change(p) * 100
+
+        # Momentum divergence
+        for p in [5, 10]:
+            df[f'eth_btc_mom_diff_{p}'] = df[f'eth_momentum_{p}'] - df[f'btc_momentum_{p}']
+
+        # BTC trend
+        btc_sma20 = df['btc_close'].rolling(20).mean()
+        btc_sma50 = df['btc_close'].rolling(50).mean()
+        df['btc_above_sma20'] = (df['btc_close'] > btc_sma20).astype(int)
+        df['btc_above_sma50'] = (df['btc_close'] > btc_sma50).astype(int)
+        df['btc_sma20_dist'] = (df['btc_close'] / btc_sma20 - 1) * 100
+        df['btc_sma50_dist'] = (df['btc_close'] / btc_sma50 - 1) * 100
+
+        # BTC regime
+        btc_slope = btc_sma20.pct_change(5) * 100
+        df['btc_regime_bull'] = ((btc_slope > 0.5) & (df['btc_close'] > btc_sma50)).astype(int)
+        df['btc_regime_bear'] = ((btc_slope < -0.5) & (df['btc_close'] < btc_sma50)).astype(int)
+
+        # Relative volatility
+        eth_vol = eth_ret.rolling(20).std()
+        btc_vol = btc_ret.rolling(20).std()
+        df['eth_btc_vol_ratio'] = eth_vol / (btc_vol + 1e-10)
+
+        # BTC RSI
+        df['btc_rsi_14'] = ta.momentum.RSIIndicator(df['btc_close'], window=14).rsi()
+        df['btc_rsi_diff'] = df['1d_rsi_14'] - df['btc_rsi_14']
+
+        # BTC lead/lag
+        df['btc_ret_lag1'] = btc_ret.shift(1)
+        df['btc_ret_lag2'] = btc_ret.shift(2)
+        df['btc_big_move_up'] = (btc_ret > 0.03).astype(int)
+        df['btc_big_move_down'] = (btc_ret < -0.03).astype(int)
+
+        # ETH beta to BTC
+        cov = eth_ret.rolling(30).cov(btc_ret)
+        var = btc_ret.rolling(30).var()
+        df['eth_btc_beta_30'] = cov / (var + 1e-10)
+
+        df.drop(columns=['btc_close', 'btc_volume', 'btc_high', 'btc_low'], inplace=True, errors='ignore')
+        return df
+
+    # ========================================================================
+    # COMPUTE FEATURES — Build full feature set for prediction
+    # ========================================================================
 
     def compute_live_features(self, crypto_id: str, feature_cols: list, scaler, seq_len: int = 30) -> Tuple[Optional[np.ndarray], Optional[pd.Series]]:
         try:
-            df_1d = self._download_ohlcv(crypto_id, '1d', 300)
+            cfg = COIN_CONFIG[crypto_id]
+            symbol = cfg['symbol']
+
+            # Download multi-TF data
+            df_1d = self._download_ohlcv(symbol, '1d', 300)
             df_1d = self._create_indicators(df_1d, '1d_')
 
             for tf in ['4h', '1w']:
-                df_tf = self._download_ohlcv(crypto_id, tf, 300 if tf == '4h' else 100)
+                df_tf = self._download_ohlcv(symbol, tf, 300 if tf == '4h' else 100)
                 df_tf = self._create_indicators(df_tf, f'{tf}_')
                 tf_cols = ['date'] + [c for c in df_tf.columns if c.startswith(f'{tf}_')]
                 df_1d = pd.merge_asof(df_1d.sort_values('date'), df_tf[tf_cols].sort_values('date'), on='date', direction='backward')
 
             df_1d = self._add_cross_tf_and_non_tech(df_1d)
 
-            # Add regime + bear features if needed
-            has_regime = any(c in feature_cols for c in ['sma_50', 'regime_bull', 'accumulation_score'])
-            if has_regime:
-                df_1d = self._add_market_regime_features(df_1d)
-            has_bear = any(c in feature_cols for c in ['price_above_sma10_pct', 'roc_5', 'consec_red'])
-            if has_bear:
-                df_1d = self._add_bear_features(df_1d)
+            # Always add market regime + bear features for V3 coins
+            df_1d = self._add_market_regime_features(df_1d)
+            df_1d = self._add_bear_features(df_1d)
 
+            # BTC influence features for ETH
+            if cfg.get('btc_influence'):
+                df_1d = self._add_btc_influence_features(df_1d)
+
+            # Fill missing features
             for c in feature_cols:
-                if c not in df_1d.columns: df_1d[c] = 0
+                if c not in df_1d.columns:
+                    df_1d[c] = 0
                 df_1d[c] = pd.to_numeric(df_1d[c], errors='coerce')
             df_1d[feature_cols] = df_1d[feature_cols].replace([np.inf, -np.inf], np.nan).fillna(0)
 
@@ -351,28 +435,67 @@ class CNNPredictionService:
             import traceback; traceback.print_exc()
             return None, None
 
+    # ========================================================================
+    # FILTERS — Exact match with backtest check_long_filters / check_short_filters
+    # ========================================================================
+
     def _check_filters(self, raw_row, direction: str) -> Tuple[bool, str]:
+        """Same filters as backtest — momentum, SMA, volatility, trend"""
         if direction == 'LONG':
+            # Momentum filter: at least 1 of 3 TFs bullish
+            bull = sum(1 for c in ['1d_momentum_5', '4h_momentum_5', '1w_momentum_5']
+                       if c in raw_row.index and pd.notna(raw_row[c]) and raw_row[c] > 0)
+            total = sum(1 for c in ['1d_momentum_5', '4h_momentum_5', '1w_momentum_5']
+                        if c in raw_row.index and pd.notna(raw_row[c]))
+            if total > 0 and bull < 1:
+                return False, "weak_momentum"
+            # Bear market SMA50
             if 'distance_from_sma50' in raw_row.index and pd.notna(raw_row['distance_from_sma50']):
                 if raw_row['distance_from_sma50'] < -0.05:
-                    return False, "bear_market_sma50"
+                    return False, "bear_sma50"
+            # Bear market SMA20
             if 'distance_from_sma20' in raw_row.index and pd.notna(raw_row['distance_from_sma20']):
-                if raw_row['distance_from_sma20'] < -0.03:
-                    return False, "bear_market_sma20"
+                if raw_row['distance_from_sma20'] < -0.02:
+                    return False, "bear_sma20"
+            # High volatility
+            if 'volatility_regime' in raw_row.index and pd.notna(raw_row['volatility_regime']):
+                if raw_row['volatility_regime'] > 2.5:
+                    return False, "high_vol"
+            # Downtrend
             if 'trend_score' in raw_row.index and pd.notna(raw_row['trend_score']):
                 if raw_row['trend_score'] < -3:
                     return False, "downtrend"
-        else:
+        else:  # SHORT
+            # Bearish momentum required
+            bear = sum(1 for c in ['1d_momentum_5', '4h_momentum_5', '1w_momentum_5']
+                       if c in raw_row.index and pd.notna(raw_row[c]) and raw_row[c] < 0)
+            total = sum(1 for c in ['1d_momentum_5', '4h_momentum_5', '1w_momentum_5']
+                        if c in raw_row.index and pd.notna(raw_row[c]))
+            if total > 0 and bear < 1:
+                return False, "weak_bear_momentum"
+            # Bull market SMA50
             if 'distance_from_sma50' in raw_row.index and pd.notna(raw_row['distance_from_sma50']):
                 if raw_row['distance_from_sma50'] > 0.05:
-                    return False, "bull_market"
+                    return False, "bull_sma50"
+            # Bull market SMA20
+            if 'distance_from_sma20' in raw_row.index and pd.notna(raw_row['distance_from_sma20']):
+                if raw_row['distance_from_sma20'] > 0.03:
+                    return False, "bull_sma20"
+            # High volatility
+            if 'volatility_regime' in raw_row.index and pd.notna(raw_row['volatility_regime']):
+                if raw_row['volatility_regime'] > 2.5:
+                    return False, "high_vol"
+            # Uptrend
             if 'trend_score' in raw_row.index and pd.notna(raw_row['trend_score']):
                 if raw_row['trend_score'] > 3:
                     return False, "uptrend"
         return True, "pass"
 
+    # ========================================================================
+    # META FEATURES — Exact match with 05_train_meta_xgboost.py
+    # ========================================================================
+
     def _build_meta_features(self, crypto_id, raw_row, l_conf, l_dir, s_conf, s_dir, l_probs, s_probs):
-        """Build meta-model input -- matches training exactly"""
         if crypto_id not in self.meta_features:
             return None
         meta_feat_cols = self.meta_features[crypto_id]
@@ -396,13 +519,19 @@ class CNNPredictionService:
                 mf[c] = float(val) if pd.notna(val) else 0.0
         return np.array([[mf.get(c, 0) for c in meta_feat_cols]])
 
+    # ========================================================================
+    # TP/SL — ATR symmetric for V3 coins (matches training labels)
+    # ========================================================================
+
     def _get_dynamic_tp_sl(self, raw_row, price: float, direction: str, crypto_id: str = '') -> Dict:
         atr = None
         if '1d_atr_14' in raw_row.index and pd.notna(raw_row['1d_atr_14']):
             atr = raw_row['1d_atr_14']
 
-        # BTC: ATR symmetric (matches training)
-        if crypto_id == 'bitcoin':
+        cfg = COIN_CONFIG.get(crypto_id, {})
+
+        # V3 coins: ATR symmetric (matches training labels exactly)
+        if cfg.get('v3'):
             ATR_MULT = 1.5
             if atr and atr > 0:
                 tp_m = min(max(ATR_MULT * atr / price, 0.008), 0.04)
@@ -416,7 +545,7 @@ class CNNPredictionService:
                 return {'target_price': round(price * (1 - tp_m), 2), 'stop_loss': round(price * (1 + sl_m), 2),
                         'take_profit_pct': round(tp_m * 100, 2), 'stop_loss_pct': round(sl_m * 100, 2), 'risk_reward_ratio': 1.0}
 
-        # Other coins: legacy asymmetric
+        # Legacy coins: asymmetric
         if direction == 'LONG':
             if atr and atr > 0:
                 tp_m = min(max(atr / price, 0.008), 0.03)
@@ -433,6 +562,10 @@ class CNNPredictionService:
                 tp_m, sl_m = 0.02, 0.01
             return {'target_price': round(price * (1 - tp_m), 2), 'stop_loss': round(price * (1 + sl_m), 2),
                     'take_profit_pct': round(tp_m * 100, 2), 'stop_loss_pct': round(sl_m * 100, 2), 'risk_reward_ratio': round(tp_m / sl_m, 2)}
+
+    # ========================================================================
+    # PREDICT — Main prediction with meta-model filtering
+    # ========================================================================
 
     async def predict_one(self, crypto_id: str) -> Dict:
         if crypto_id not in COIN_CONFIG:
@@ -484,20 +617,19 @@ class CNNPredictionService:
                 crypto_id, raw_row,
                 long_conf or 0, long_dir_val or 0,
                 short_conf or 0, short_dir_val or 0,
-                long_probs, short_probs
-            )
+                long_probs, short_probs)
 
-        # Determine signals with meta check
+        # Determine LONG signal
         long_signal = None
         if long_dir_val == 1 and long_conf is not None and long_conf >= cfg['long_conf']:
             if raw_row is not None:
                 passes, reason = self._check_filters(raw_row, 'LONG')
                 if passes:
-                    # Meta check
                     meta_ok = True
                     if meta_input is not None and crypto_id in self.meta_long_models:
                         meta_long_prob = self.meta_long_models[crypto_id].predict_proba(meta_input)[0][1]
-                        meta_ok = meta_long_prob >= cfg.get('long_meta_conf', 0.0)
+                        meta_thresh = cfg.get('long_meta_conf', 0.0)
+                        meta_ok = meta_long_prob >= meta_thresh if meta_thresh > 0 else True
                     if meta_ok:
                         long_signal = 'BUY'
                     else:
@@ -505,16 +637,17 @@ class CNNPredictionService:
                 else:
                     long_filter_reason = reason
 
+        # Determine SHORT signal
         short_signal = None
         if short_dir_val == 1 and short_conf is not None and short_conf >= cfg['short_conf']:
-            row = raw_row
-            if row is not None:
-                passes, reason = self._check_filters(row, 'SHORT')
+            if raw_row is not None:
+                passes, reason = self._check_filters(raw_row, 'SHORT')
                 if passes:
                     meta_ok = True
                     if meta_input is not None and crypto_id in self.meta_short_models:
                         meta_short_prob = self.meta_short_models[crypto_id].predict_proba(meta_input)[0][1]
-                        meta_ok = meta_short_prob >= cfg.get('short_meta_conf', 0.0)
+                        meta_thresh = cfg.get('short_meta_conf', 0.0)
+                        meta_ok = meta_short_prob >= meta_thresh if meta_thresh > 0 else True
                     if meta_ok:
                         short_signal = 'SELL'
                     else:
@@ -557,8 +690,8 @@ class CNNPredictionService:
             "meta_short_prob": round(meta_short_prob, 4) if meta_short_prob is not None else None,
             "current_price": round(price, 4) if price else None,
             "risk_management": risk_management,
-            "model": "CNN_1D_MultiScale + XGBoost_Meta",
-            "features": "multi_tf_4h_1d_1w + market_regime",
+            "model": "CNN_1D_MultiScale + XGBoost_Meta V3",
+            "features": f"multi_tf + regime + bear" + (" + btc_influence" if cfg.get('btc_influence') else ""),
             "timestamp": datetime.now().isoformat(),
             "data_source": "binance_live"
         }
