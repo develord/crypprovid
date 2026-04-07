@@ -13,7 +13,7 @@ sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / 'training'))
 sys.path.insert(0, str(project_root / 'data'))
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from datetime import datetime
@@ -29,6 +29,10 @@ from models import (
     BacktestRequest,
     BacktestResponse
 )
+from auth import verify_api_key, get_current_user
+from auth_routes import router as auth_router
+from credits_routes import router as credits_router
+from database import init_db
 from predictions_cnn import CNNPredictionService
 try:
     from backtest_service import get_backtest_service
@@ -73,7 +77,7 @@ app = FastAPI(
     }
 )
 
-# CORS configuration - Pour l'app Android
+# CORS configuration - restricted for mobile-only API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -81,6 +85,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include auth routes
+app.include_router(auth_router)
+app.include_router(credits_router)
+
+
+# API Key middleware - blocks requests without valid app API key
+@app.middleware("http")
+async def api_key_middleware(request: Request, call_next):
+    """Verify X-API-Key header on all requests except health and docs"""
+    exempt_paths = ["/health", "/docs", "/redoc", "/openapi.json", "/"]
+    path = request.url.path
+
+    # Only health/docs exempt — auth endpoints still need API key
+    if path in exempt_paths:
+        return await call_next(request)
+
+    api_key = request.headers.get("X-API-Key")
+    if not api_key or not verify_api_key(api_key):
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": "Forbidden",
+                "detail": "Invalid or missing API key",
+                "timestamp": datetime.now().isoformat()
+            }
+        )
+
+    return await call_next(request)
+
 
 # Initialize services
 prediction_service = None
@@ -92,6 +126,9 @@ async def startup_event():
     """Load CNN models on startup"""
     global prediction_service, backtest_service
     try:
+        # Initialize user database
+        await init_db()
+
         logger.info("Starting API server with CNN+Meta V3 models...")
         prediction_service = CNNPredictionService()
         await prediction_service.load_models()
@@ -161,7 +198,7 @@ async def health_check():
     summary="Liste des Cryptos",
     description="Obtenir la liste de toutes les cryptomonnaies supportées"
 )
-async def get_cryptos():
+async def get_cryptos(current_user: dict = Depends(get_current_user)):
     """Get list of supported cryptocurrencies"""
     if prediction_service is None:
         raise HTTPException(
@@ -276,7 +313,7 @@ async def get_cryptos():
         }
     }
 )
-async def get_prediction(crypto: str):
+async def get_prediction(crypto: str, current_user: dict = Depends(get_current_user)):
     """Get prediction for specific cryptocurrency using CNN LONG+SHORT models"""
     if prediction_service is None:
         raise HTTPException(
@@ -308,7 +345,7 @@ async def get_prediction(crypto: str):
     summary="Prix Actuel",
     description="Obtenir le prix actuel d'une cryptomonnaie (inclus dans la prédiction)"
 )
-async def get_current_price(crypto: str):
+async def get_current_price(crypto: str, current_user: dict = Depends(get_current_user)):
     """Get current price for cryptocurrency (from latest CSV data)"""
     if prediction_service is None:
         raise HTTPException(
@@ -396,7 +433,7 @@ async def get_current_price(crypto: str):
         }
     }
 )
-async def run_backtest(request: BacktestRequest):
+async def run_backtest(request: BacktestRequest, current_user: dict = Depends(get_current_user)):
     """
     Run backtest simulation on historical data
 
@@ -458,6 +495,165 @@ async def run_backtest(request: BacktestRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Backtest failed: {str(e)}"
         )
+
+
+# ============================================================================
+# TECHNICAL ANALYSIS ENDPOINT
+# ============================================================================
+
+@app.get("/api/analysis/{crypto}")
+async def get_technical_analysis(crypto: str, current_user: dict = Depends(get_current_user)):
+    """Get detailed technical analysis indicators for a crypto."""
+    if prediction_service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    crypto = crypto.lower()
+    try:
+        return await prediction_service.get_technical_analysis(crypto)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Analysis error for {crypto}: {e}")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+# ============================================================================
+# NEWS ENDPOINT — Fetch + classify crypto news
+# ============================================================================
+
+import aiohttp
+import re
+import hashlib
+
+NEWS_CACHE = {"data": None, "timestamp": 0}
+NEWS_CACHE_DURATION = 300  # 5 minutes
+
+# Keyword-based sentiment classifier (fast, no ML model needed on server)
+BULLISH_KEYWORDS = [
+    'rally', 'surge', 'soar', 'bull', 'breakout', 'all-time high', 'ath',
+    'adoption', 'approve', 'approval', 'etf', 'institutional', 'partnership',
+    'upgrade', 'launch', 'record', 'gain', 'pump', 'moon', 'recover',
+    'bullish', 'accumulate', 'buy', 'growth', 'positive', 'boost',
+    'milestone', 'integration', 'support', 'optimistic', 'profit',
+]
+BEARISH_KEYWORDS = [
+    'crash', 'plunge', 'dump', 'bear', 'sell-off', 'selloff', 'hack',
+    'exploit', 'ban', 'regulation', 'sec', 'lawsuit', 'fraud', 'scam',
+    'liquidat', 'bankrupt', 'collapse', 'fear', 'panic', 'decline',
+    'bearish', 'risk', 'warning', 'loss', 'drop', 'fall', 'negative',
+    'investigation', 'crackdown', 'vulnerability', 'attack',
+]
+
+COIN_TAGS = {
+    'bitcoin': ['bitcoin', 'btc'],
+    'ethereum': ['ethereum', 'eth', 'vitalik'],
+    'solana': ['solana', 'sol'],
+    'xrp': ['xrp', 'ripple'],
+    'cardano': ['cardano', 'ada'],
+    'chainlink': ['chainlink', 'link'],
+    'near': ['near protocol', 'near'],
+    'avalanche': ['avalanche', 'avax'],
+    'dogecoin': ['dogecoin', 'doge'],
+}
+
+
+def classify_sentiment(title: str, body: str = '') -> dict:
+    """Rule-based sentiment classification."""
+    text = f"{title} {body}".lower()
+    bull_score = sum(1 for kw in BULLISH_KEYWORDS if kw in text)
+    bear_score = sum(1 for kw in BEARISH_KEYWORDS if kw in text)
+    total = bull_score + bear_score
+    if total == 0:
+        return {'label': 'neutral', 'score': 0.5}
+    ratio = bull_score / total
+    if ratio >= 0.65:
+        return {'label': 'bullish', 'score': round(ratio, 2)}
+    elif ratio <= 0.35:
+        return {'label': 'bearish', 'score': round(1 - ratio, 2)}
+    return {'label': 'neutral', 'score': 0.5}
+
+
+def tag_coins(title: str, body: str = '') -> list:
+    """Tag which coins a news article relates to."""
+    text = f"{title} {body}".lower()
+    tags = []
+    for coin, keywords in COIN_TAGS.items():
+        if any(kw in text for kw in keywords):
+            tags.append(coin)
+    return tags if tags else ['market']
+
+
+@app.get("/api/news")
+async def get_crypto_news(current_user: dict = Depends(get_current_user)):
+    """Fetch and classify latest crypto news from CryptoPanic API."""
+    global NEWS_CACHE
+    now = datetime.now().timestamp()
+
+    # Return cached if fresh
+    if NEWS_CACHE["data"] and (now - NEWS_CACHE["timestamp"]) < NEWS_CACHE_DURATION:
+        return NEWS_CACHE["data"]
+
+    articles = []
+
+    try:
+        # CryptoPanic free API (no key needed for public posts)
+        async with aiohttp.ClientSession() as session:
+            url = "https://cryptopanic.com/api/free/v1/posts/?auth_token=free&public=true&kind=news"
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    for item in data.get('results', [])[:30]:
+                        title = item.get('title', '')
+                        body = item.get('body', '') or ''
+                        sentiment = classify_sentiment(title, body)
+                        coins = tag_coins(title, body)
+                        article_id = hashlib.md5(title.encode()).hexdigest()[:12]
+                        articles.append({
+                            'id': article_id,
+                            'title': title,
+                            'source': item.get('source', {}).get('title', 'Unknown'),
+                            'url': item.get('url', ''),
+                            'published_at': item.get('published_at', ''),
+                            'sentiment': sentiment,
+                            'coins': coins,
+                        })
+    except Exception as e:
+        logger.warning(f"CryptoPanic fetch failed: {e}")
+
+    # Fallback: CoinGecko news via RSS proxy if CryptoPanic fails
+    if not articles:
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN&sortOrder=popular"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        for item in data.get('Data', [])[:30]:
+                            title = item.get('title', '')
+                            body = item.get('body', '') or ''
+                            sentiment = classify_sentiment(title, body)
+                            coins = tag_coins(title, body)
+                            article_id = hashlib.md5(title.encode()).hexdigest()[:12]
+                            articles.append({
+                                'id': article_id,
+                                'title': title,
+                                'source': item.get('source', 'Unknown'),
+                                'url': item.get('url', ''),
+                                'published_at': datetime.fromtimestamp(item.get('published_on', 0)).isoformat(),
+                                'sentiment': sentiment,
+                                'coins': coins,
+                            })
+        except Exception as e:
+            logger.warning(f"CryptoCompare fetch failed: {e}")
+
+    result = {
+        'articles': articles,
+        'count': len(articles),
+        'timestamp': datetime.now().isoformat(),
+    }
+
+    NEWS_CACHE = {"data": result, "timestamp": now}
+    return result
 
 
 # Exception handlers

@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 from datetime import datetime
 
-from direction_prediction_model import CNNDirectionModel, DeepCNNShortModel
+from direction_prediction_model import CNNDirectionModel, DeepCNNShortModel, DeepCNNShortModelLN
 
 logger = logging.getLogger(__name__)
 
@@ -46,19 +46,43 @@ COIN_CONFIG = {
         'cooldown_days': 5, 'max_consec_losses': 3,
         'start': '2018-01-01', 'v3': True, 'btc_influence': True,
     },
-    'solana':    {'symbol': 'SOL/USDT',  'short_name': 'sol',  'long_conf': 0.60, 'short_conf': 0.55, 'start': '2020-08-01'},
+    'solana': {
+        'symbol': 'SOL/USDT', 'short_name': 'sol',
+        'long_conf': 0.55, 'short_conf': 0.50,
+        'long_meta_conf': 0.0, 'short_meta_conf': 0.0,
+        'cooldown_days': 2, 'max_consec_losses': 2,
+        'start': '2020-08-01', 'v3': True,
+    },
     'dogecoin':  {'symbol': 'DOGE/USDT', 'short_name': 'doge', 'long_conf': 0.60, 'short_conf': 0.55, 'start': '2019-07-01'},
     'avalanche': {
         'symbol': 'AVAX/USDT', 'short_name': 'avax',
         'long_conf': 0.60, 'short_conf': 0.50,
         'long_meta_conf': 0.0, 'short_meta_conf': 0.0,
-        'cooldown_days': 5, 'max_consec_losses': 3,
+        'cooldown_days': 2, 'max_consec_losses': 2,
         'start': '2020-09-01', 'v3': True,
     },
-    'xrp':       {'symbol': 'XRP/USDT',  'short_name': 'xrp',  'long_conf': 0.55, 'short_conf': 0.68, 'start': '2018-01-01'},
-    'chainlink': {'symbol': 'LINK/USDT', 'short_name': 'link', 'long_conf': 0.85, 'short_conf': 0.55, 'start': '2017-12-01'},
+    'xrp': {
+        'symbol': 'XRP/USDT', 'short_name': 'xrp',
+        'long_conf': 0.75, 'short_conf': 0.50,
+        'long_meta_conf': 0.55, 'short_meta_conf': 0.0,
+        'cooldown_days': 2, 'max_consec_losses': 2,
+        'start': '2018-01-01', 'v3': True,
+    },
+    'chainlink': {
+        'symbol': 'LINK/USDT', 'short_name': 'link',
+        'long_conf': 0.55, 'short_conf': 0.55,
+        'long_meta_conf': 0.52, 'short_meta_conf': 0.50,
+        'cooldown_days': 2, 'max_consec_losses': 2,
+        'start': '2017-12-01', 'v3': True,
+    },
     'cardano':   {'symbol': 'ADA/USDT',  'short_name': 'ada',  'long_conf': 0.65, 'short_conf': 0.55, 'start': '2018-04-01'},
-    'near':      {'symbol': 'NEAR/USDT', 'short_name': 'near', 'long_conf': 0.70, 'short_conf': 0.52, 'start': '2020-10-01'},
+    'near': {
+        'symbol': 'NEAR/USDT', 'short_name': 'near',
+        'long_conf': 0.65, 'short_conf': 0.50,
+        'long_meta_conf': 0.0, 'short_meta_conf': 0.0,
+        'cooldown_days': 2, 'max_consec_losses': 2,
+        'start': '2020-10-01', 'v3': True,
+    },
 }
 
 SEQ_LEN = 30
@@ -92,10 +116,14 @@ class CNNPredictionService:
         feature_dim = ckpt.get('feature_dim', 99)
         seq_len = ckpt.get('sequence_length', 30)
         temperature = ckpt.get('temperature', 1.0)
-        # Auto-detect DeepCNNShortModel by state_dict keys
-        is_deep = any('conv3_1' in k or 'conv9_1' in k for k in ckpt['model_state_dict'].keys())
-        if is_deep:
+        # Auto-detect model architecture by state_dict keys
+        keys = ckpt['model_state_dict'].keys()
+        is_deep_bn = any('conv3_1' in k or 'conv9_1' in k for k in keys)
+        is_deep_ln = any('ln1.weight' in k or 'ln2.weight' in k for k in keys)
+        if is_deep_bn:
             model = DeepCNNShortModel(feature_dim=feature_dim, sequence_length=seq_len, dropout=0.35)
+        elif is_deep_ln or (ckpt.get('model_type') == 'deep_cnn_short' and not is_deep_bn):
+            model = DeepCNNShortModelLN(feature_dim=feature_dim, sequence_length=seq_len, dropout=0.30)
         else:
             model = CNNDirectionModel(feature_dim=feature_dim, sequence_length=seq_len, dropout=0.4)
         model.load_state_dict(ckpt['model_state_dict'])
@@ -706,6 +734,213 @@ class CNNPredictionService:
             "timestamp": datetime.now().isoformat(),
             "data_source": "binance_live"
         }
+
+    async def get_technical_analysis(self, crypto_id: str) -> Dict:
+        """Extract key technical indicators for human-readable analysis."""
+        if crypto_id not in COIN_CONFIG:
+            raise ValueError(f"Unknown crypto: {crypto_id}")
+
+        cfg = COIN_CONFIG[crypto_id]
+        symbol = cfg['symbol']
+
+        try:
+            # Download fresh data
+            df_1d = self._download_ohlcv(symbol, '1d', 300)
+            df_1d = self._create_indicators(df_1d, '1d_')
+
+            for tf in ['4h', '1w']:
+                df_tf = self._download_ohlcv(symbol, tf, 300 if tf == '4h' else 100)
+                df_tf = self._create_indicators(df_tf, f'{tf}_')
+                tf_cols = ['date'] + [c for c in df_tf.columns if c.startswith(f'{tf}_')]
+                df_1d = pd.merge_asof(df_1d.sort_values('date'), df_tf[tf_cols].sort_values('date'), on='date', direction='backward')
+
+            df_1d = self._add_cross_tf_and_non_tech(df_1d)
+            df_1d = self._add_market_regime_features(df_1d)
+
+            row = df_1d.iloc[-1]
+            price = float(row['close'])
+
+            def safe(col, default=None):
+                if col in row.index and pd.notna(row[col]):
+                    return round(float(row[col]), 4)
+                return default
+
+            # RSI analysis
+            rsi_1d = safe('1d_rsi_14')
+            rsi_4h = safe('4h_rsi_14')
+            rsi_1w = safe('1w_rsi_14')
+            rsi_status = 'neutral'
+            if rsi_1d is not None:
+                if rsi_1d > 70: rsi_status = 'overbought'
+                elif rsi_1d > 60: rsi_status = 'bullish'
+                elif rsi_1d < 30: rsi_status = 'oversold'
+                elif rsi_1d < 40: rsi_status = 'bearish'
+
+            # MACD
+            macd_line = safe('1d_macd_line')
+            macd_signal = safe('1d_macd_signal')
+            macd_hist = safe('1d_macd_histogram')
+            macd_status = 'neutral'
+            if macd_hist is not None:
+                if macd_hist > 0: macd_status = 'bullish'
+                elif macd_hist < 0: macd_status = 'bearish'
+
+            # Bollinger Bands
+            bb_upper = safe('1d_bb_upper')
+            bb_lower = safe('1d_bb_lower')
+            bb_middle = safe('1d_bb_middle')
+            bb_width = safe('1d_bb_width')
+            bb_status = 'neutral'
+            if bb_upper and bb_lower:
+                if price > bb_upper: bb_status = 'overbought'
+                elif price < bb_lower: bb_status = 'oversold'
+                elif price > bb_middle: bb_status = 'upper_band'
+                else: bb_status = 'lower_band'
+
+            # Trend
+            sma50 = safe('sma_50')
+            sma200 = safe('sma_200')
+            trend_score = safe('trend_score')
+            dist_sma20 = safe('distance_from_sma20')
+            dist_sma50 = safe('distance_from_sma50')
+
+            trend_status = 'neutral'
+            if sma50 and sma200:
+                if sma50 > sma200 and price > sma50: trend_status = 'strong_bullish'
+                elif sma50 > sma200: trend_status = 'bullish'
+                elif sma50 < sma200 and price < sma50: trend_status = 'strong_bearish'
+                elif sma50 < sma200: trend_status = 'bearish'
+
+            # Market regime
+            regime = 'ranging'
+            regime_bull = safe('regime_bull', 0)
+            regime_bear = safe('regime_bear', 0)
+            if regime_bull == 1: regime = 'bullish'
+            elif regime_bear == 1: regime = 'bearish'
+
+            # Volatility
+            atr = safe('1d_atr_14')
+            hist_vol = safe('1d_hist_vol_20')
+            vol_regime = safe('volatility_regime')
+            vol_status = 'normal'
+            if vol_regime is not None:
+                if vol_regime > 1.5: vol_status = 'high'
+                elif vol_regime < 0.7: vol_status = 'low'
+
+            # Volume
+            volume_ratio = safe('1d_volume_ratio')
+            volume_trend = safe('volume_trend')
+            vol_trend_status = 'normal'
+            if volume_ratio is not None:
+                if volume_ratio > 1.5: vol_trend_status = 'high'
+                elif volume_ratio < 0.5: vol_trend_status = 'low'
+
+            # Stochastic
+            stoch_k = safe('1d_stoch_k')
+            stoch_d = safe('1d_stoch_d')
+            stoch_status = 'neutral'
+            if stoch_k is not None:
+                if stoch_k > 80: stoch_status = 'overbought'
+                elif stoch_k < 20: stoch_status = 'oversold'
+
+            # ADX
+            adx = safe('1d_adx_14')
+            adx_status = 'weak'
+            if adx is not None:
+                if adx > 40: adx_status = 'very_strong'
+                elif adx > 25: adx_status = 'strong'
+
+            # Support/Resistance
+            support = safe('support_dist_pct')
+            resistance = safe('resistance_dist_pct')
+
+            # Momentum
+            mom_5d = safe('1d_momentum_5')
+            mom_10d = safe('1d_momentum_10')
+
+            # Accumulation / Distribution
+            acc_score = safe('accumulation_score', 0)
+            dist_score = safe('distribution_score', 0)
+            golden_cross = safe('golden_cross_5d', 0)
+            death_cross = safe('death_cross_5d', 0)
+
+            # Price position
+            price_pos_20 = safe('price_position_20')
+            price_pos_50 = safe('price_position_50')
+
+            # Overall score (-5 to +5)
+            score = 0
+            if rsi_status == 'bullish': score += 1
+            elif rsi_status == 'overbought': score -= 1
+            elif rsi_status == 'bearish': score -= 1
+            elif rsi_status == 'oversold': score += 1
+            if macd_status == 'bullish': score += 1
+            elif macd_status == 'bearish': score -= 1
+            if trend_status in ('strong_bullish', 'bullish'): score += 1
+            elif trend_status in ('strong_bearish', 'bearish'): score -= 1
+            if regime == 'bullish': score += 1
+            elif regime == 'bearish': score -= 1
+            if stoch_status == 'overbought': score -= 0.5
+            elif stoch_status == 'oversold': score += 0.5
+
+            overall = 'neutral'
+            if score >= 3: overall = 'strong_bullish'
+            elif score >= 1.5: overall = 'bullish'
+            elif score <= -3: overall = 'strong_bearish'
+            elif score <= -1.5: overall = 'bearish'
+
+            return {
+                'crypto': crypto_id,
+                'price': price,
+                'timestamp': datetime.now().isoformat(),
+                'overall': {'status': overall, 'score': round(score, 1)},
+                'trend': {
+                    'status': trend_status,
+                    'sma50': sma50,
+                    'sma200': sma200,
+                    'dist_sma20_pct': dist_sma20,
+                    'dist_sma50_pct': dist_sma50,
+                    'trend_score': trend_score,
+                    'golden_cross': golden_cross == 1,
+                    'death_cross': death_cross == 1,
+                },
+                'momentum': {
+                    'rsi_1d': rsi_1d, 'rsi_4h': rsi_4h, 'rsi_1w': rsi_1w,
+                    'rsi_status': rsi_status,
+                    'macd_line': macd_line, 'macd_signal': macd_signal, 'macd_histogram': macd_hist,
+                    'macd_status': macd_status,
+                    'stoch_k': stoch_k, 'stoch_d': stoch_d, 'stoch_status': stoch_status,
+                    'adx': adx, 'adx_status': adx_status,
+                    'momentum_5d': mom_5d, 'momentum_10d': mom_10d,
+                },
+                'volatility': {
+                    'atr_14': atr,
+                    'bb_upper': bb_upper, 'bb_lower': bb_lower, 'bb_middle': bb_middle,
+                    'bb_width': bb_width, 'bb_status': bb_status,
+                    'hist_vol_20': hist_vol,
+                    'vol_regime': vol_regime, 'vol_status': vol_status,
+                },
+                'volume': {
+                    'volume_ratio': volume_ratio,
+                    'volume_trend': volume_trend,
+                    'status': vol_trend_status,
+                },
+                'regime': {
+                    'status': regime,
+                    'accumulation': acc_score == 1,
+                    'distribution': dist_score == 1,
+                },
+                'levels': {
+                    'support_dist_pct': support,
+                    'resistance_dist_pct': resistance,
+                    'price_position_20d': price_pos_20,
+                    'price_position_50d': price_pos_50,
+                },
+            }
+        except Exception as e:
+            logger.error(f"Technical analysis error {crypto_id}: {e}")
+            import traceback; traceback.print_exc()
+            raise
 
     @property
     def models(self):
