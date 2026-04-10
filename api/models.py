@@ -119,6 +119,79 @@ class ErrorResponse(BaseModel):
 # BACKTEST MODELS
 # ============================================================================
 
+# ============================================================================
+# AUTH MODELS
+# ============================================================================
+
+class GoogleAuthRequest(BaseModel):
+    """Google Sign-In authentication request"""
+    id_token: str = Field(..., description="Google ID token from the app")
+
+
+class BinanceAuthRequest(BaseModel):
+    """Binance OAuth2 authentication request"""
+    code: str = Field(..., description="Authorization code from Binance OAuth")
+    redirect_uri: str = Field(..., description="Redirect URI used in the OAuth flow")
+
+
+class RefreshTokenRequest(BaseModel):
+    """Token refresh request"""
+    refresh_token: str = Field(..., description="Refresh token to exchange for a new access token")
+
+
+class UserResponse(BaseModel):
+    """User information response"""
+    id: int = Field(..., description="User ID")
+    email: Optional[str] = Field(None, description="User email")
+    name: Optional[str] = Field(None, description="User display name")
+    avatar: Optional[str] = Field(None, description="User avatar URL")
+    auth_provider: str = Field(..., description="Authentication provider (google/binance)")
+    created_at: str = Field(..., description="Account creation timestamp")
+    last_login: str = Field(..., description="Last login timestamp")
+
+
+class AuthResponse(BaseModel):
+    """Authentication response with tokens"""
+    access_token: str = Field(..., description="JWT access token")
+    refresh_token: str = Field(..., description="JWT refresh token for renewal")
+    token_type: str = Field(default="bearer", description="Token type")
+    expires_in: int = Field(..., description="Token expiry in seconds")
+    user: UserResponse = Field(..., description="Authenticated user info")
+
+
+# ============================================================================
+# CREDITS MODELS
+# ============================================================================
+
+class CreditsResponse(BaseModel):
+    """Credit balance response"""
+    balance: int = Field(..., description="Current credit balance")
+    last_updated: str = Field(..., description="Last update timestamp")
+
+
+class EarnCreditsRequest(BaseModel):
+    """Request to earn credits after watching ad"""
+    ad_id: str = Field(..., description="Ad unit ID that was watched")
+    reward_amount: int = Field(default=3, description="Credits to add")
+
+
+class SpendCreditsRequest(BaseModel):
+    """Request to spend credits on a prediction"""
+    crypto: str = Field(..., description="Crypto being viewed")
+    amount: int = Field(default=3, description="Credits to spend")
+
+
+class SpendCreditsResponse(BaseModel):
+    """Response after spending credits"""
+    success: bool = Field(..., description="Whether spend was successful")
+    balance: int = Field(..., description="New balance after spend")
+    crypto: str = Field(..., description="Crypto that was unlocked")
+
+
+# ============================================================================
+# BACKTEST MODELS
+# ============================================================================
+
 class BacktestRequest(BaseModel):
     """Request model for backtest"""
     crypto: str = Field(..., description="Crypto (bitcoin, ethereum, solana)")

@@ -83,6 +83,20 @@ COIN_CONFIG = {
         'cooldown_days': 2, 'max_consec_losses': 2,
         'start': '2020-10-01', 'v3': True,
     },
+    'polkadot': {
+        'symbol': 'DOT/USDT', 'short_name': 'dot',
+        'long_conf': 0.55, 'short_conf': 0.55,
+        'long_meta_conf': 0.0, 'short_meta_conf': 0.0,
+        'cooldown_days': 2, 'max_consec_losses': 2,
+        'start': '2020-08-20', 'v3': True,
+    },
+    'filecoin': {
+        'symbol': 'FIL/USDT', 'short_name': 'fil',
+        'long_conf': 0.60, 'short_conf': 0.55,
+        'long_meta_conf': 0.0, 'short_meta_conf': 0.0,
+        'cooldown_days': 2, 'max_consec_losses': 2,
+        'start': '2020-10-15', 'v3': True,
+    },
 }
 
 SEQ_LEN = 30
@@ -497,6 +511,7 @@ class CNNPredictionService:
                 if raw_row['distance_from_sma20'] < -0.02:
                     return False, "bear_sma20"
             # High volatility
+# V2: Weekly momentum filter            if '1w_momentum_5' in raw_row.index and pd.notna(raw_row['1w_momentum_5']):                if raw_row['1w_momentum_5'] < -0.10:                    return False, "weak_weekly"
             if 'volatility_regime' in raw_row.index and pd.notna(raw_row['volatility_regime']):
                 if raw_row['volatility_regime'] > 2.5:
                     return False, "high_vol"
@@ -712,7 +727,7 @@ class CNNPredictionService:
 
         symbol_map = {'bitcoin': 'BTCUSDT', 'ethereum': 'ETHUSDT', 'solana': 'SOLUSDT',
                       'dogecoin': 'DOGEUSDT', 'avalanche': 'AVAXUSDT', 'xrp': 'XRPUSDT',
-                      'chainlink': 'LINKUSDT', 'cardano': 'ADAUSDT', 'near': 'NEARUSDT'}
+                      'chainlink': 'LINKUSDT', 'cardano': 'ADAUSDT', 'near': 'NEARUSDT', 'polkadot': 'DOTUSDT', 'filecoin': 'FILUSDT'}
 
         return {
             "crypto": crypto_id,

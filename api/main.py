@@ -18,6 +18,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from datetime import datetime
 import logging
+import time as _time
+from collections import defaultdict
 
 from config import settings
 from models import (
@@ -36,7 +38,7 @@ from database import init_db
 from predictions_cnn import CNNPredictionService
 try:
     from backtest_service import get_backtest_service
-except:
+except ImportError:
     get_backtest_service = None
 
 # Configuration logging
@@ -46,35 +48,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize FastAPI app
+# Initialize FastAPI app (Swagger disabled in production)
 app = FastAPI(
-    title="Crypto Predictions API",
-    description="""
-    API de prédictions pour cryptomonnaies utilisant des modèles V11 TEMPORAL.
-
-    ## Features
-    - Prédictions en temps réel (BUY/HOLD)
-    - Modèles multi-timeframe (1d + 4h + 1h)
-    - Triple Barrier: TP=+1.5%, SL=-0.75%
-    - Thresholds optimaux (BTC=0.37, ETH=0.35, SOL=0.35)
-    - Performance validée: +43.38% ROI portfolio
-    - Documentation Swagger interactive
-
-    ## Cryptos supportées
-    - Bitcoin (BTC) - ROI +22.56%
-    - Ethereum (ETH) - ROI +45.07%
-    - Solana (SOL) - ROI +64.48%
-    """,
-    version="11.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    contact={
-        "name": "Crypto Adviser",
-        "url": "https://github.com/crypto-adviser",
-    },
-    license_info={
-        "name": "MIT",
-    }
+    title="CryptoXHunter API",
+    description="AI-Powered Crypto Trading Signals",
+    version="3.0.0",
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None,
+    openapi_url="/openapi.json" if settings.DEBUG else None,
 )
 
 # CORS configuration - restricted for mobile-only API
@@ -91,26 +72,63 @@ app.include_router(auth_router)
 app.include_router(credits_router)
 
 
+# ============================================================================
+# RATE LIMITING (in-memory, per-IP)
+# ============================================================================
+_rate_limits: dict = defaultdict(list)  # {ip: [timestamps]}
+RATE_LIMIT_WINDOW = 60  # seconds
+RATE_LIMITS = {
+    '/auth/': 10,          # 10 auth attempts per minute
+    '/api/credits/earn': 6,  # 6 earn requests per minute
+    '/api/predictions/': 30, # 30 predictions per minute
+    '_default': 60,          # 60 requests per minute for other endpoints
+}
+
+
+def _get_rate_limit(path: str) -> int:
+    for prefix, limit in RATE_LIMITS.items():
+        if prefix != '_default' and path.startswith(prefix):
+            return limit
+    return RATE_LIMITS['_default']
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """Per-IP rate limiting"""
+    client_ip = request.headers.get("X-Real-IP", request.client.host if request.client else "unknown")
+    path = request.url.path
+    limit = _get_rate_limit(path)
+    now = _time.time()
+    key = f"{client_ip}:{path.split('/')[1] if '/' in path[1:] else path}"
+
+    # Clean old entries and check limit
+    _rate_limits[key] = [t for t in _rate_limits[key] if now - t < RATE_LIMIT_WINDOW]
+    if len(_rate_limits[key]) >= limit:
+        return JSONResponse(
+            status_code=429,
+            content={"error": "Too many requests", "retry_after": RATE_LIMIT_WINDOW}
+        )
+    _rate_limits[key].append(now)
+
+    return await call_next(request)
+
+
 # API Key middleware - blocks requests without valid app API key
 @app.middleware("http")
 async def api_key_middleware(request: Request, call_next):
-    """Verify X-API-Key header on all requests except health and docs"""
-    exempt_paths = ["/health", "/docs", "/redoc", "/openapi.json", "/"]
+    """Verify X-API-Key header on all requests except health and public endpoints"""
     path = request.url.path
+    exempt_exact = {"/health", "/"}
+    exempt_prefixes = ("/api/analysis/", "/api/news", "/api/credits", "/auth/")
 
-    # Only health/docs exempt — auth endpoints still need API key
-    if path in exempt_paths:
+    if path in exempt_exact or path == "/api/analysis" or path == "/api/news" or any(path.startswith(p) for p in exempt_prefixes):
         return await call_next(request)
 
     api_key = request.headers.get("X-API-Key")
     if not api_key or not verify_api_key(api_key):
         return JSONResponse(
             status_code=403,
-            content={
-                "error": "Forbidden",
-                "detail": "Invalid or missing API key",
-                "timestamp": datetime.now().isoformat()
-            }
+            content={"error": "Forbidden"}
         )
 
     return await call_next(request)
@@ -138,6 +156,7 @@ async def startup_event():
         if get_backtest_service:
             backtest_service = get_backtest_service()
             logger.info("Backtest service initialized")
+
     except Exception as e:
         logger.error(f"Failed to load CNN models: {e}")
         prediction_service = CNNPredictionService()  # Empty service, will load on demand
@@ -270,6 +289,20 @@ async def get_cryptos(current_user: dict = Depends(get_current_user)):
             "name": "NEAR Protocol",
             "models": ["CNN_LONG", "CNN_SHORT"],
             "status": "active"
+        },
+        "polkadot": {
+            "id": "polkadot",
+            "symbol": "DOTUSDT",
+            "name": "Polkadot",
+            "models": ["CNN_LONG", "CNN_SHORT"],
+            "status": "active"
+        },
+        "filecoin": {
+            "id": "filecoin",
+            "symbol": "FILUSDT",
+            "name": "Filecoin",
+            "models": ["CNN_LONG", "CNN_SHORT"],
+            "status": "active"
         }
     }
 
@@ -322,7 +355,7 @@ async def get_prediction(crypto: str, current_user: dict = Depends(get_current_u
         )
 
     crypto = crypto.lower()
-    supported = ['bitcoin', 'ethereum', 'solana', 'dogecoin', 'avalanche', 'xrp', 'chainlink', 'cardano', 'near']
+    supported = ['bitcoin', 'ethereum', 'solana', 'dogecoin', 'avalanche', 'xrp', 'chainlink', 'cardano', 'near', 'polkadot', 'filecoin']
     if crypto not in supported:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -330,13 +363,21 @@ async def get_prediction(crypto: str, current_user: dict = Depends(get_current_u
         )
 
     try:
+        # Check prediction cache (4h)
+        now = _time.time()
+        cached = PREDICTION_CACHE.get(crypto)
+        if cached and (now - cached["timestamp"]) < PREDICTION_CACHE_DURATION:
+            logger.info(f"Cache hit for {crypto} prediction")
+            return cached["data"]
+
         prediction = await prediction_service.predict_one(crypto)
+        PREDICTION_CACHE[crypto] = {"data": prediction, "timestamp": now}
         return prediction
     except Exception as e:
         logger.error(f"Error predicting {crypto}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate prediction: {str(e)}"
+            detail="Failed to generate prediction"
         )
 
 
@@ -380,7 +421,7 @@ async def get_current_price(crypto: str, current_user: dict = Depends(get_curren
         logger.error(f"Error getting price for {crypto}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get price: {str(e)}"
+            detail="Failed to get price"
         )
 
 
@@ -481,19 +522,19 @@ async def run_backtest(request: BacktestRequest, current_user: dict = Depends(ge
         logger.error(f"File not found: {e}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
+            detail="Required data not found"
         )
     except ValueError as e:
         logger.error(f"Invalid parameters: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            detail="Invalid parameters"
         )
     except Exception as e:
         logger.error(f"Backtest error for {crypto}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Backtest failed: {str(e)}"
+            detail="Backtest failed"
         )
 
 
@@ -502,19 +543,27 @@ async def run_backtest(request: BacktestRequest, current_user: dict = Depends(ge
 # ============================================================================
 
 @app.get("/api/analysis/{crypto}")
-async def get_technical_analysis(crypto: str, current_user: dict = Depends(get_current_user)):
+async def get_technical_analysis(crypto: str):
     """Get detailed technical analysis indicators for a crypto."""
     if prediction_service is None:
         raise HTTPException(status_code=503, detail="Service not initialized")
 
     crypto = crypto.lower()
     try:
-        return await prediction_service.get_technical_analysis(crypto)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        # Check analysis cache (4h)
+        now = _time.time()
+        cached = ANALYSIS_CACHE.get(crypto)
+        if cached and (now - cached["timestamp"]) < ANALYSIS_CACHE_DURATION:
+            return cached["data"]
+
+        result = await prediction_service.get_technical_analysis(crypto)
+        ANALYSIS_CACHE[crypto] = {"data": result, "timestamp": now}
+        return result
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Crypto not found")
     except Exception as e:
         logger.error(f"Analysis error for {crypto}: {e}")
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Analysis failed")
 
 
 # ============================================================================
@@ -526,7 +575,15 @@ import re
 import hashlib
 
 NEWS_CACHE = {"data": None, "timestamp": 0}
-NEWS_CACHE_DURATION = 300  # 5 minutes
+NEWS_CACHE_DURATION = 21600  # 6 hours
+
+# Prediction cache: 4 hours per crypto (models retrain daily, predictions stable intraday)
+PREDICTION_CACHE: dict = {}  # {crypto: {"data": ..., "timestamp": float}}
+PREDICTION_CACHE_DURATION = 14400  # 4 hours
+
+# Analysis cache: 4 hours
+ANALYSIS_CACHE: dict = {}
+ANALYSIS_CACHE_DURATION = 3600  # 1 hour
 
 # Keyword-based sentiment classifier (fast, no ML model needed on server)
 BULLISH_KEYWORDS = [
@@ -584,8 +641,8 @@ def tag_coins(title: str, body: str = '') -> list:
 
 
 @app.get("/api/news")
-async def get_crypto_news(current_user: dict = Depends(get_current_user)):
-    """Fetch and classify latest crypto news from CryptoPanic API."""
+async def get_crypto_news():
+    """Fetch and classify latest crypto news."""
     global NEWS_CACHE
     now = datetime.now().timestamp()
 
@@ -595,56 +652,77 @@ async def get_crypto_news(current_user: dict = Depends(get_current_user)):
 
     articles = []
 
+    # Source 1: CoinGecko News API (free, no key)
     try:
-        # CryptoPanic free API (no key needed for public posts)
         async with aiohttp.ClientSession() as session:
-            url = "https://cryptopanic.com/api/free/v1/posts/?auth_token=free&public=true&kind=news"
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            url = "https://api.coingecko.com/api/v3/news?page=1"
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    for item in data.get('results', [])[:30]:
+                    for item in data.get('data', [])[:25]:
                         title = item.get('title', '')
-                        body = item.get('body', '') or ''
-                        sentiment = classify_sentiment(title, body)
-                        coins = tag_coins(title, body)
+                        desc = item.get('description', '') or ''
+                        sentiment = classify_sentiment(title, desc)
+                        coins = tag_coins(title, desc)
                         article_id = hashlib.md5(title.encode()).hexdigest()[:12]
+                        thumb = item.get('thumb_2x', '') or item.get('thumb', '') or ''
                         articles.append({
                             'id': article_id,
                             'title': title,
-                            'source': item.get('source', {}).get('title', 'Unknown'),
+                            'source': item.get('author', 'Unknown'),
                             'url': item.get('url', ''),
-                            'published_at': item.get('published_at', ''),
+                            'published_at': item.get('updated_at', '') or item.get('created_at', ''),
                             'sentiment': sentiment,
                             'coins': coins,
+                            'image': thumb,
                         })
+                    logger.info(f"CoinGecko news: {len(articles)} articles")
     except Exception as e:
-        logger.warning(f"CryptoPanic fetch failed: {e}")
+        logger.warning(f"CoinGecko news failed: {e}")
 
-    # Fallback: CoinGecko news via RSS proxy if CryptoPanic fails
+    # Source 2: CoinTelegraph RSS (fallback)
     if not articles:
         try:
+            try:
+                import defusedxml.ElementTree as ET
+            except ImportError:
+                import xml.etree.ElementTree as ET
             async with aiohttp.ClientSession() as session:
-                url = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN&sortOrder=popular"
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                url = "https://cointelegraph.com/rss"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
                     if resp.status == 200:
-                        data = await resp.json()
-                        for item in data.get('Data', [])[:30]:
-                            title = item.get('title', '')
-                            body = item.get('body', '') or ''
-                            sentiment = classify_sentiment(title, body)
-                            coins = tag_coins(title, body)
+                        text = await resp.text()
+                        root = ET.fromstring(text)
+                        for item in root.findall('.//item')[:25]:
+                            title = item.findtext('title', '')
+                            desc_raw = item.findtext('description', '') or ''
+                            # Strip HTML from description
+                            desc = re.sub(r'<[^>]+>', '', desc_raw).strip()
+                            link = item.findtext('link', '')
+                            # Handle CDATA in link
+                            if link:
+                                link = link.strip().split('?')[0]
+                            pub_date = item.findtext('pubDate', '')
+                            creator = item.findtext('{http://purl.org/dc/elements/1.1/}creator', 'CoinTelegraph')
+                            sentiment = classify_sentiment(title, desc)
+                            coins = tag_coins(title, desc)
                             article_id = hashlib.md5(title.encode()).hexdigest()[:12]
+                            # Get image from media:content
+                            media = item.find('{http://search.yahoo.com/mrss/}content')
+                            image = media.get('url', '') if media is not None else ''
                             articles.append({
                                 'id': article_id,
                                 'title': title,
-                                'source': item.get('source', 'Unknown'),
-                                'url': item.get('url', ''),
-                                'published_at': datetime.fromtimestamp(item.get('published_on', 0)).isoformat(),
+                                'source': creator,
+                                'url': link,
+                                'published_at': pub_date,
                                 'sentiment': sentiment,
                                 'coins': coins,
+                                'image': image,
                             })
+                        logger.info(f"CoinTelegraph RSS: {len(articles)} articles")
         except Exception as e:
-            logger.warning(f"CryptoCompare fetch failed: {e}")
+            logger.warning(f"CoinTelegraph RSS failed: {e}")
 
     result = {
         'articles': articles,
@@ -659,15 +737,11 @@ async def get_crypto_news(current_user: dict = Depends(get_current_user)):
 # Exception handlers
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Global exception handler"""
-    logger.error(f"Unhandled exception: {exc}")
+    """Global exception handler — never leak internal details"""
+    logger.error(f"Unhandled exception on {request.url.path}: {exc}", exc_info=True)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "error": "Internal server error",
-            "detail": str(exc),
-            "timestamp": datetime.now().isoformat()
-        }
+        content={"error": "Internal server error"}
     )
 
 
