@@ -50,6 +50,17 @@ async def init_db():
                 timestamp TEXT NOT NULL DEFAULT (datetime('now'))
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS device_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                fcm_token TEXT NOT NULL,
+                platform TEXT NOT NULL DEFAULT 'android',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(user_id, fcm_token)
+            )
+        """)
         await db.commit()
     logger.info(f"Database initialized at {DATABASE_PATH}")
 
@@ -182,6 +193,35 @@ async def spend_credits(user_id: int, amount: int, crypto: str) -> int | None:
         row_cursor = await db.execute("SELECT balance FROM credits WHERE user_id = ?", (user_id,))
         row = await row_cursor.fetchone()
         return row[0] if row else 0
+
+
+async def save_device_token(user_id: int, fcm_token: str, platform: str = 'android'):
+    """Save or update a device FCM token for push notifications"""
+    now = datetime.utcnow().isoformat()
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute(
+            """INSERT INTO device_tokens (user_id, fcm_token, platform, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(user_id, fcm_token) DO UPDATE SET updated_at = ?""",
+            (user_id, fcm_token, platform, now, now, now)
+        )
+        await db.commit()
+
+
+async def remove_device_token(fcm_token: str):
+    """Remove an invalid/expired FCM token"""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute("DELETE FROM device_tokens WHERE fcm_token = ?", (fcm_token,))
+        await db.commit()
+
+
+async def get_all_device_tokens() -> list[dict]:
+    """Get all registered device tokens for broadcasting"""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT user_id, fcm_token, platform FROM device_tokens")
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
 
 
 async def get_last_earn_time(user_id: int) -> str | None:

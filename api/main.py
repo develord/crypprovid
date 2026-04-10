@@ -34,6 +34,7 @@ from models import (
 from auth import verify_api_key, get_current_user
 from auth_routes import router as auth_router
 from credits_routes import router as credits_router
+from notification_routes import router as notification_router
 from database import init_db
 from predictions_cnn import CNNPredictionService
 try:
@@ -70,6 +71,7 @@ app.add_middleware(
 # Include auth routes
 app.include_router(auth_router)
 app.include_router(credits_router)
+app.include_router(notification_router)
 
 
 # ============================================================================
@@ -119,7 +121,7 @@ async def api_key_middleware(request: Request, call_next):
     """Verify X-API-Key header on all requests except health and public endpoints"""
     path = request.url.path
     exempt_exact = {"/health", "/"}
-    exempt_prefixes = ("/api/analysis/", "/api/news", "/api/credits", "/auth/")
+    exempt_prefixes = ("/api/analysis/", "/api/news", "/api/credits", "/auth/", "/api/notifications/signal-webhook")
 
     if path in exempt_exact or path == "/api/analysis" or path == "/api/news" or any(path.startswith(p) for p in exempt_prefixes):
         return await call_next(request)
