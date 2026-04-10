@@ -56,3 +56,4 @@ Thumbs.db
 # Training results
 training_results/
 backtest_results/
+firebase-service-account.json
