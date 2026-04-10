@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request, status
 from pydantic import BaseModel
 
 from auth import get_current_user
-from database import save_device_token, get_all_device_tokens, remove_device_token
+from database import save_device_token, get_all_device_tokens, remove_device_token, save_signal, get_signal_history, get_signal_stats
 from notification_service import send_signal_notification
 
 logger = logging.getLogger(__name__)
@@ -55,6 +55,13 @@ async def signal_webhook(payload: SignalWebhookPayload, request: Request):
 
     logger.info(f"Signal webhook: {payload.coin} {payload.direction} {payload.confidence:.1%}")
 
+    # Save signal to history DB
+    signal_id = await save_signal(
+        payload.coin, payload.direction, payload.confidence,
+        payload.price, payload.tp_pct, payload.sl_pct,
+    )
+    logger.info(f"Signal saved to history: id={signal_id}")
+
     tokens = await get_all_device_tokens()
     if not tokens:
         logger.info("No device tokens registered, skipping push")
@@ -76,4 +83,12 @@ async def signal_webhook(payload: SignalWebhookPayload, request: Request):
         await remove_device_token(bad_token)
 
     logger.info(f"Push sent: {sent} success, {len(failed)} removed")
-    return {"status": "ok", "sent": sent, "removed": len(failed)}
+    return {"status": "ok", "sent": sent, "removed": len(failed), "signal_id": signal_id}
+
+
+@router.get("/history", summary="Get signal history")
+async def get_history(coin: str = None, limit: int = 50):
+    """Get past signals with optional coin filter. Public endpoint (no auth)."""
+    signals = await get_signal_history(coin=coin.upper() if coin else None, limit=min(limit, 200))
+    stats = await get_signal_stats()
+    return {"signals": signals, "stats": stats, "count": len(signals)}

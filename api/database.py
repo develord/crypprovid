@@ -51,6 +51,22 @@ async def init_db():
             )
         """)
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS signal_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                coin TEXT NOT NULL,
+                direction TEXT NOT NULL CHECK(direction IN ('LONG', 'SHORT')),
+                confidence REAL NOT NULL,
+                price REAL NOT NULL,
+                tp_pct REAL,
+                sl_pct REAL,
+                result TEXT CHECK(result IN ('TP', 'SL', 'CLOSED', NULL)),
+                exit_price REAL,
+                pnl_pct REAL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                closed_at TEXT
+            )
+        """)
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS device_tokens (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL REFERENCES users(id),
@@ -222,6 +238,70 @@ async def get_all_device_tokens() -> list[dict]:
         cursor = await db.execute("SELECT user_id, fcm_token, platform FROM device_tokens")
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
+
+
+async def save_signal(coin: str, direction: str, confidence: float, price: float, tp_pct: float, sl_pct: float) -> int:
+    """Save a new signal to history"""
+    now = datetime.utcnow().isoformat()
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            "INSERT INTO signal_history (coin, direction, confidence, price, tp_pct, sl_pct, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (coin, direction, confidence, price, tp_pct, sl_pct, now)
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def update_signal_result(signal_id: int, result: str, exit_price: float, pnl_pct: float):
+    """Update signal with trade result (TP/SL/CLOSED)"""
+    now = datetime.utcnow().isoformat()
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute(
+            "UPDATE signal_history SET result = ?, exit_price = ?, pnl_pct = ?, closed_at = ? WHERE id = ?",
+            (result, exit_price, pnl_pct, now, signal_id)
+        )
+        await db.commit()
+
+
+async def get_signal_history(coin: str | None = None, limit: int = 50) -> list[dict]:
+    """Get signal history, optionally filtered by coin"""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        if coin:
+            cursor = await db.execute(
+                "SELECT * FROM signal_history WHERE coin = ? ORDER BY created_at DESC LIMIT ?",
+                (coin, limit)
+            )
+        else:
+            cursor = await db.execute(
+                "SELECT * FROM signal_history ORDER BY created_at DESC LIMIT ?",
+                (limit,)
+            )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def get_signal_stats() -> dict:
+    """Get win/loss stats for all signals"""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute("""
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN result = 'TP' THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN result = 'SL' THEN 1 ELSE 0 END) as losses,
+                SUM(CASE WHEN result IS NULL THEN 1 ELSE 0 END) as pending,
+                AVG(CASE WHEN pnl_pct IS NOT NULL THEN pnl_pct END) as avg_pnl
+            FROM signal_history
+        """)
+        row = await cursor.fetchone()
+        return {
+            "total": row[0] or 0,
+            "wins": row[1] or 0,
+            "losses": row[2] or 0,
+            "pending": row[3] or 0,
+            "avg_pnl": round(row[4] or 0, 2),
+            "win_rate": round((row[1] or 0) / max(((row[1] or 0) + (row[2] or 0)), 1) * 100, 1),
+        }
 
 
 async def get_last_earn_time(user_id: int) -> str | None:
