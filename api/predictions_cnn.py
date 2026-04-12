@@ -27,10 +27,11 @@ from direction_prediction_model import CNNDirectionModel, DeepCNNShortModel, Dee
 logger = logging.getLogger(__name__)
 
 # ============================================================================
-# COIN CONFIGS — Exactly match optimizer results
+# COIN CONFIGS — SYNCED WITH LIVE BOT (Source of Truth)
 # ============================================================================
-# BTC optimizer: WR:59.1% Ret:+83.2% LCNN>=0.55 SCNN>=0.50 LMeta>=0.45 SMeta>=0.50 CD:5 MC:3
-# ETH optimizer: WR:62.5% Ret:+46.2% LCNN>=0.55 SCNN>=0.50 LMeta>=0.00 SMeta>=0.45 CD:5 MC:3
+# Bot config.py is the source of truth - API must match exactly
+# BTC optimizer: WR:59.1% Ret:+83.2% LCNN>=0.55 SCNN>=0.50 LMeta>=0.45 SMeta>=0.50
+# ETH optimizer: WR:62.5% Ret:+46.2% LCNN>=0.55 SCNN>=0.50 LMeta>=0.00 SMeta>=0.45
 COIN_CONFIG = {
     'bitcoin': {
         'symbol': 'BTC/USDT', 'short_name': 'btc',
@@ -53,11 +54,10 @@ COIN_CONFIG = {
         'cooldown_days': 2, 'max_consec_losses': 2,
         'start': '2020-08-01', 'v3': True,
     },
-    'dogecoin':  {'symbol': 'DOGE/USDT', 'short_name': 'doge', 'long_conf': 0.60, 'short_conf': 0.55, 'start': '2019-07-01'},
     'avalanche': {
         'symbol': 'AVAX/USDT', 'short_name': 'avax',
         'long_conf': 0.60, 'short_conf': 0.50,
-        'long_meta_conf': 0.0, 'short_meta_conf': 0.0,
+        'long_meta_conf': 0.45, 'short_meta_conf': 0.0,  # FIXED: Bot has 0.45 for LONG meta
         'cooldown_days': 2, 'max_consec_losses': 2,
         'start': '2020-09-01', 'v3': True,
     },
@@ -75,20 +75,12 @@ COIN_CONFIG = {
         'cooldown_days': 2, 'max_consec_losses': 2,
         'start': '2017-12-01', 'v3': True,
     },
-    'cardano':   {'symbol': 'ADA/USDT',  'short_name': 'ada',  'long_conf': 0.65, 'short_conf': 0.55, 'start': '2018-04-01'},
     'near': {
         'symbol': 'NEAR/USDT', 'short_name': 'near',
         'long_conf': 0.65, 'short_conf': 0.50,
         'long_meta_conf': 0.0, 'short_meta_conf': 0.0,
         'cooldown_days': 2, 'max_consec_losses': 2,
         'start': '2020-10-01', 'v3': True,
-    },
-    'polkadot': {
-        'symbol': 'DOT/USDT', 'short_name': 'dot',
-        'long_conf': 0.55, 'short_conf': 0.55,
-        'long_meta_conf': 0.0, 'short_meta_conf': 0.0,
-        'cooldown_days': 2, 'max_consec_losses': 2,
-        'start': '2020-08-20', 'v3': True,
     },
     'filecoin': {
         'symbol': 'FIL/USDT', 'short_name': 'fil',
@@ -97,6 +89,20 @@ COIN_CONFIG = {
         'cooldown_days': 2, 'max_consec_losses': 2,
         'start': '2020-10-15', 'v3': True,
     },
+}
+
+# ============================================================================
+# FILTER PARAMETERS — SYNCED WITH LIVE BOT (config.py:169-178)
+# ============================================================================
+FILTERS = {
+    'max_consecutive_losses': 2,    # V3: optimizer best for all coins
+    'cooldown_days': 2,             # V3: optimizer best (was 5)
+    'min_momentum_alignment': 1,    # At least 1/3 TFs bullish
+    'max_volatility_regime': 2.5,
+    'min_adx': 15,
+    'bear_sma50_threshold': -0.05,  # -5% below SMA50 (default)
+    'bear_sma20_threshold': -0.02,  # -2% below SMA20 (backtest original)
+    'max_trend_score': -3,          # Block if trend_score below this
 }
 
 SEQ_LEN = 30
@@ -492,32 +498,44 @@ class CNNPredictionService:
     # FILTERS — Exact match with backtest check_long_filters / check_short_filters
     # ========================================================================
 
-    def _check_filters(self, raw_row, direction: str) -> Tuple[bool, str]:
-        """Same filters as backtest — momentum, SMA, volatility, trend"""
+    def _check_filters(self, raw_row, direction: str, crypto_id: str = '') -> Tuple[bool, str]:
+        """Same filters as backtest — momentum, SMA, volatility, trend
+        SYNCED WITH LIVE BOT signal_generator.py:208-292"""
+        cfg = COIN_CONFIG.get(crypto_id, {})
+        f = FILTERS
+
         if direction == 'LONG':
             # Momentum filter: at least 1 of 3 TFs bullish
             bull = sum(1 for c in ['1d_momentum_5', '4h_momentum_5', '1w_momentum_5']
                        if c in raw_row.index and pd.notna(raw_row[c]) and raw_row[c] > 0)
             total = sum(1 for c in ['1d_momentum_5', '4h_momentum_5', '1w_momentum_5']
                         if c in raw_row.index and pd.notna(raw_row[c]))
-            if total > 0 and bull < 1:
+            if total > 0 and bull < f['min_momentum_alignment']:
                 return False, "weak_momentum"
+
+            # Per-coin SMA overrides, fallback to global FILTERS (matches bot exactly)
+            sma50_thresh = cfg.get('bear_sma50', f['bear_sma50_threshold'])
+            sma20_thresh = cfg.get('bear_sma20', f['bear_sma20_threshold'])
+
             # Bear market SMA50
             if 'distance_from_sma50' in raw_row.index and pd.notna(raw_row['distance_from_sma50']):
-                if raw_row['distance_from_sma50'] < -0.05:
+                if raw_row['distance_from_sma50'] < sma50_thresh:
                     return False, "bear_sma50"
             # Bear market SMA20
             if 'distance_from_sma20' in raw_row.index and pd.notna(raw_row['distance_from_sma20']):
-                if raw_row['distance_from_sma20'] < -0.02:
+                if raw_row['distance_from_sma20'] < sma20_thresh:
                     return False, "bear_sma20"
+            # V2: Weekly momentum filter - block LONG if weekly trend is strongly bearish
+            if '1w_momentum_5' in raw_row.index and pd.notna(raw_row['1w_momentum_5']):
+                if raw_row['1w_momentum_5'] < -0.10:
+                    return False, "weak_weekly"
             # High volatility
-# V2: Weekly momentum filter            if '1w_momentum_5' in raw_row.index and pd.notna(raw_row['1w_momentum_5']):                if raw_row['1w_momentum_5'] < -0.10:                    return False, "weak_weekly"
             if 'volatility_regime' in raw_row.index and pd.notna(raw_row['volatility_regime']):
-                if raw_row['volatility_regime'] > 2.5:
+                if raw_row['volatility_regime'] > f['max_volatility_regime']:
                     return False, "high_vol"
             # Downtrend
             if 'trend_score' in raw_row.index and pd.notna(raw_row['trend_score']):
-                if raw_row['trend_score'] < -3:
+                if raw_row['trend_score'] < f['max_trend_score']:
                     return False, "downtrend"
         else:  # SHORT
             # Bearish momentum required
@@ -525,7 +543,7 @@ class CNNPredictionService:
                        if c in raw_row.index and pd.notna(raw_row[c]) and raw_row[c] < 0)
             total = sum(1 for c in ['1d_momentum_5', '4h_momentum_5', '1w_momentum_5']
                         if c in raw_row.index and pd.notna(raw_row[c]))
-            if total > 0 and bear < 1:
+            if total > 0 and bear < f['min_momentum_alignment']:
                 return False, "weak_bear_momentum"
             # Bull market SMA50
             if 'distance_from_sma50' in raw_row.index and pd.notna(raw_row['distance_from_sma50']):
@@ -537,7 +555,7 @@ class CNNPredictionService:
                     return False, "bull_sma20"
             # High volatility
             if 'volatility_regime' in raw_row.index and pd.notna(raw_row['volatility_regime']):
-                if raw_row['volatility_regime'] > 2.5:
+                if raw_row['volatility_regime'] > f['max_volatility_regime']:
                     return False, "high_vol"
             # Uptrend
             if 'trend_score' in raw_row.index and pd.notna(raw_row['trend_score']):
@@ -677,7 +695,7 @@ class CNNPredictionService:
         long_signal = None
         if long_dir_val == 1 and long_conf is not None and long_conf >= cfg['long_conf']:
             if raw_row is not None:
-                passes, reason = self._check_filters(raw_row, 'LONG')
+                passes, reason = self._check_filters(raw_row, 'LONG', crypto_id)
                 if passes:
                     meta_ok = True
                     if meta_input is not None and crypto_id in self.meta_long_models:
@@ -695,7 +713,7 @@ class CNNPredictionService:
         short_signal = None
         if short_dir_val == 1 and short_conf is not None and short_conf >= cfg['short_conf']:
             if raw_row is not None:
-                passes, reason = self._check_filters(raw_row, 'SHORT')
+                passes, reason = self._check_filters(raw_row, 'SHORT', crypto_id)
                 if passes:
                     meta_ok = True
                     if meta_input is not None and crypto_id in self.meta_short_models:

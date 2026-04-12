@@ -82,8 +82,8 @@ RATE_LIMIT_WINDOW = 60  # seconds
 RATE_LIMITS = {
     '/auth/': 10,          # 10 auth attempts per minute
     '/api/credits/earn': 6,  # 6 earn requests per minute
-    '/api/predictions/': 30, # 30 predictions per minute
-    '_default': 60,          # 60 requests per minute for other endpoints
+    '/api/predictions/': 60, # 60 predictions per minute
+    '_default': 120,         # 120 requests per minute for other endpoints
 }
 
 
@@ -101,7 +101,10 @@ async def rate_limit_middleware(request: Request, call_next):
     path = request.url.path
     limit = _get_rate_limit(path)
     now = _time.time()
-    key = f"{client_ip}:{path.split('/')[1] if '/' in path[1:] else path}"
+    # Group by route prefix: /api/predictions, /api/credits, etc.
+    parts = path.strip('/').split('/')
+    route_group = '/'.join(parts[:2]) if len(parts) >= 2 else path
+    key = f"{client_ip}:{route_group}"
 
     # Clean old entries and check limit
     _rate_limits[key] = [t for t in _rate_limits[key] if now - t < RATE_LIMIT_WINDOW]
@@ -153,7 +156,7 @@ async def startup_event():
         prediction_service = CNNPredictionService()
         await prediction_service.load_models()
         logger.info(f"API ready - {len(prediction_service.models)} CNN models loaded")
-        logger.info(f"Coins: BTC, ETH, SOL, DOGE, AVAX, XRP, LINK, ADA, NEAR (LONG + SHORT + Meta)")
+        logger.info(f"Coins: BTC, ETH, SOL, AVAX, XRP, LINK, NEAR, FIL (LONG + SHORT + Meta) - Synced with Live Bot")
 
         if get_backtest_service:
             backtest_service = get_backtest_service()
@@ -227,20 +230,20 @@ async def get_cryptos(current_user: dict = Depends(get_current_user)):
             detail="Service not initialized"
         )
 
-    # All supported cryptos with metadata
+    # All supported cryptos with metadata - SYNCED WITH LIVE BOT
     cryptos_with_id = {
         "bitcoin": {
             "id": "bitcoin",
             "symbol": "BTCUSDT",
             "name": "Bitcoin",
-            "models": ["CNN_LONG"],
+            "models": ["CNN_LONG", "CNN_SHORT", "META_LONG", "META_SHORT"],
             "status": "active"
         },
         "ethereum": {
             "id": "ethereum",
             "symbol": "ETHUSDT",
             "name": "Ethereum",
-            "models": ["CNN_LONG", "CNN_SHORT"],
+            "models": ["CNN_LONG", "CNN_SHORT", "META_SHORT"],
             "status": "active"
         },
         "solana": {
@@ -250,52 +253,31 @@ async def get_cryptos(current_user: dict = Depends(get_current_user)):
             "models": ["CNN_LONG", "CNN_SHORT"],
             "status": "active"
         },
-        "dogecoin": {
-            "id": "dogecoin",
-            "symbol": "DOGEUSDT",
-            "name": "Dogecoin",
-            "models": ["CNN_LONG", "CNN_SHORT"],
-            "status": "active"
-        },
         "avalanche": {
             "id": "avalanche",
             "symbol": "AVAXUSDT",
             "name": "Avalanche",
-            "models": ["CNN_LONG", "CNN_SHORT"],
+            "models": ["CNN_LONG", "CNN_SHORT", "META_LONG"],
             "status": "active"
         },
         "xrp": {
             "id": "xrp",
             "symbol": "XRPUSDT",
             "name": "XRP",
-            "models": ["CNN_LONG", "CNN_SHORT"],
+            "models": ["CNN_LONG", "CNN_SHORT", "META_LONG"],
             "status": "active"
         },
         "chainlink": {
             "id": "chainlink",
             "symbol": "LINKUSDT",
             "name": "Chainlink",
-            "models": ["CNN_LONG", "CNN_SHORT"],
-            "status": "active"
-        },
-        "cardano": {
-            "id": "cardano",
-            "symbol": "ADAUSDT",
-            "name": "Cardano",
-            "models": ["CNN_LONG", "CNN_SHORT"],
+            "models": ["CNN_LONG", "CNN_SHORT", "META_LONG", "META_SHORT"],
             "status": "active"
         },
         "near": {
             "id": "near",
             "symbol": "NEARUSDT",
             "name": "NEAR Protocol",
-            "models": ["CNN_LONG", "CNN_SHORT"],
-            "status": "active"
-        },
-        "polkadot": {
-            "id": "polkadot",
-            "symbol": "DOTUSDT",
-            "name": "Polkadot",
             "models": ["CNN_LONG", "CNN_SHORT"],
             "status": "active"
         },
@@ -357,7 +339,7 @@ async def get_prediction(crypto: str, current_user: dict = Depends(get_current_u
         )
 
     crypto = crypto.lower()
-    supported = ['bitcoin', 'ethereum', 'solana', 'dogecoin', 'avalanche', 'xrp', 'chainlink', 'cardano', 'near', 'polkadot', 'filecoin']
+    supported = ['bitcoin', 'ethereum', 'solana', 'avalanche', 'xrp', 'chainlink', 'near', 'filecoin']
     if crypto not in supported:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
